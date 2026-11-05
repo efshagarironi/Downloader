@@ -1925,7 +1925,9 @@ jobs:
           import android.graphics.Typeface
           import android.graphics.drawable.GradientDrawable
           import android.media.AudioManager
+          import android.media.MediaPlayer
           import android.net.Uri
+          import android.os.Build
           import android.os.Bundle
           import android.os.Handler
           import android.os.Looper
@@ -1991,6 +1993,11 @@ jobs:
               private var volLeft = true
               private var lastTapAt = 0L
               private var lastSeekAt = 0L
+              private var mpRef: MediaPlayer? = null
+              private var scrubBusy = false
+              private var scrubBusyAt = 0L
+              private var scrubPending = -1
+              private var seekWasPlaying = false
               private val hideGSeek = Runnable { gSeek.visibility = View.GONE }
               private val hideVol = Runnable { volBar.visibility = View.GONE }
               private val tapRun = Runnable { toggleOverlay() }
@@ -2114,6 +2121,45 @@ jobs:
               // ---------------- touch gestures ----------------
               // hold + drag sideways: live seek (bottom bar only) | fast flick: next/previous
               // drag up/down: volume (bar on the touched side) | double tap: pause / resume
+              // MX-style scrubbing: video is paused (so no sound), seeks are keyframe-only and never queue up.
+              private fun issueScrub() {
+                  val t = scrubPending
+                  val m = mpRef
+                  if (t < 0 || m == null) return
+                  scrubPending = -1
+                  scrubBusy = true
+                  scrubBusyAt = SystemClock.uptimeMillis()
+                  try {
+                      m.seekTo(t)
+                  } catch (ex: Exception) {
+                      scrubBusy = false
+                  }
+              }
+
+              private fun scrubTo(t: Int) {
+                  scrubPending = t
+                  if (scrubBusy && SystemClock.uptimeMillis() - scrubBusyAt > 500) scrubBusy = false
+                  if (!scrubBusy) issueScrub()
+              }
+
+              private fun finishScrub(target: Int) {
+                  scrubPending = -1
+                  scrubBusy = false
+                  val m = mpRef
+                  if (m != null) {
+                      try {
+                          if (Build.VERSION.SDK_INT >= 26) m.seekTo(target.toLong(), MediaPlayer.SEEK_CLOSEST)
+                          else m.seekTo(target)
+                      } catch (ex: Exception) {
+                          vv.seekTo(target)
+                      }
+                  } else {
+                      vv.seekTo(target)
+                  }
+                  if (seekWasPlaying) vv.start()
+                  seekWasPlaying = false
+              }
+
               private fun togglePlay() {
                   if (vv.isPlaying) {
                       vv.pause()
@@ -2172,6 +2218,8 @@ jobs:
                               if (mode == 1) {
                                   overlay.visibility = View.GONE
                                   hud.visibility = View.GONE
+                                  seekWasPlaying = vv.isPlaying
+                                  if (seekWasPlaying) vv.pause()
                               } else {
                                   volLeft = downX < w / 2f
                               }
@@ -2181,14 +2229,10 @@ jobs:
                               val delta = (dx / Math.max(w, 1) * 120000f).toInt()
                               seekTarget = (startPos + delta).coerceIn(0, if (d > 0) d else Int.MAX_VALUE)
                               if (d > 0) showGSeek(seekTarget.toFloat() / d, w)
-                              val now = SystemClock.uptimeMillis()
-                              if (now - lastSeekAt > 120) {
-                                  lastSeekAt = now
-                                  vv.seekTo(seekTarget)
-                              }
+                              if (d > 0) scrubTo(seekTarget)
                           } else if (mode == 2) {
                               val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-                              val v = Math.round(startVol + (-dy / Math.max(h, 1)) * max * 1.3f).coerceIn(0, max)
+                              val v = Math.round(startVol + (-dy / Math.max(h, 1)) * max * 2.4f).coerceIn(0, max)
                               audio.setStreamVolume(AudioManager.STREAM_MUSIC, v, 0)
                               showVol(v.toFloat() / Math.max(max, 1), volLeft)
                           }
@@ -2216,9 +2260,12 @@ jobs:
                                   if (Math.abs(vx) > dp(1200) && Math.abs(dx) > dp(60)) {
                                       gSeek.visibility = View.GONE
                                       hud.visibility = View.GONE
+                                      scrubPending = -1
+                                      scrubBusy = false
+                                      seekWasPlaying = false
                                       if (dx > 0) goNext() else goPrev()
                                   } else {
-                                      vv.seekTo(seekTarget)
+                                      finishScrub(seekTarget)
                                       seek.progress = seekTarget
                                       cur.text = Ui.dur(seekTarget.toLong())
                                       ui.postDelayed(hideGSeek, 500)
@@ -2226,6 +2273,7 @@ jobs:
                                   }
                               }
                           } else if (mode == 1) {
+                              finishScrub(seekTarget)
                               ui.postDelayed(hideGSeek, 500)
                           }
                           tracker?.recycle()
@@ -2454,6 +2502,11 @@ jobs:
                   updateNav()
 
                   vv.setOnPreparedListener { mp ->
+                      mpRef = mp
+                      mp.setOnSeekCompleteListener {
+                          scrubBusy = false
+                          if (mode == 1 && scrubPending >= 0) issueScrub()
+                      }
                       mp.isLooping = false
                       if (pos > 0) vv.seekTo(pos)
                       vv.start()
