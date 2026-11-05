@@ -188,6 +188,7 @@ jobs:
           import android.app.NotificationManager
           import android.app.PendingIntent
           import android.app.Service
+          import android.media.MediaMetadataRetriever
           import android.net.Uri
           import java.net.HttpURLConnection
           import java.net.URL
@@ -378,7 +379,16 @@ jobs:
                   var lastPct = -1
                   var lastErr: Throwable? = null
                   var ci = 0
-                  while (ci < clients.size) {
+                  var directOk = false
+                  if (isThreads) {
+                      Bus.post("🔎 Threads: دریافت مستقیم…")
+                      try {
+                          directOk = directThreads(url, dir)
+                      } catch (e: Throwable) {
+                      }
+                      if (!directOk) Bus.post("⚠️ Threads مستقیم: " + directLog.take(300))
+                  }
+                  while (!directOk && ci < clients.size) {
                       try {
                           dir.listFiles()?.forEach { it.delete() }
                           val req = buildRequest(clients[ci].first, mode, dir, clients[ci].second)
@@ -390,7 +400,8 @@ jobs:
                               }
                           }
                           val ok = dir.listFiles()?.any {
-                              it.isFile && it.extension.lowercase() !in setOf("part", "ytdl", "temp")
+                              it.isFile && it.extension.lowercase() !in setOf("part", "ytdl", "temp") &&
+                                  (!isThreads || hasVideo(it))
                           } ?: false
                           if (!ok) throw RuntimeException("فایلی دانلود نشد")
                           lastErr = null
@@ -408,16 +419,6 @@ jobs:
                               ci++
                               if (ci < clients.size) Bus.post("↻ تلاش دوباره با روش دیگر (" + ci + ")…")
                           }
-                      }
-                  }
-                  if (lastErr != null && isThreads) {
-                      try {
-                          Bus.post("↻ تلاش با روش مستقیم…")
-                          dir.listFiles()?.forEach { it.delete() }
-                          if (directThreads(url, dir)) lastErr = null
-                          else Bus.post("⚠️ Threads: " + directLog.take(400))
-                      } catch (e: Throwable) {
-                          Bus.post("⚠️ Threads: " + (e.message ?: e.toString()).take(200))
                       }
                   }
                   if (lastErr != null) {
@@ -498,27 +499,54 @@ jobs:
                   c.disconnect()
               }
 
-              private fun findVideoUrl(html: String): String? {
-                  val pats = listOf(
+              private fun cleanLink(s: String): String =
+                  s.replace("\\u0026", "&").replace("\\u0025", "%").replace("\\/", "/").replace("&amp;", "&")
+
+              // Returns candidate video links, most trustworthy first (og:video of THIS post, then
+              // video_versions nearest to this post's code, then generic fallbacks). Audio-ish links are dropped.
+              private fun findVideoUrls(html: String, id: String): List<String> {
+                  val out = ArrayList<String>()
+                  val og = listOf(
                       Regex("<meta[^>]+(?:property|name)=[\"']og:video(?::secure_url|:url)?[\"'][^>]*content=[\"']([^\"']+)[\"']", RegexOption.IGNORE_CASE),
-                      Regex("<meta[^>]+content=[\"']([^\"']+)[\"'][^>]*(?:property|name)=[\"']og:video(?::secure_url|:url)?[\"']", RegexOption.IGNORE_CASE),
-                      Regex("\"video_versions\"\\s*:\\s*\\[\\s*\\{[^\\]]*?\"url\"\\s*:\\s*\"([^\"]+)\""),
-                      Regex("\"video_url\"\\s*:\\s*\"([^\"]+)\""),
+                      Regex("<meta[^>]+content=[\"']([^\"']+)[\"'][^>]*(?:property|name)=[\"']og:video(?::secure_url|:url)?[\"']", RegexOption.IGNORE_CASE)
+                  )
+                  for (p in og) {
+                      for (m in p.findAll(html)) out.add(cleanLink(m.groupValues[1]))
+                  }
+
+                  val codePos = html.indexOf("\"code\":\"" + id + "\"")
+                  val vv = Regex("\"video_versions\"\\s*:\\s*\\[\\s*\\{[^\\]]*?\"url\"\\s*:\\s*\"([^\"]+)\"")
+                  val found = vv.findAll(html).toList()
+                  val sorted = if (codePos >= 0) found.sortedBy { Math.abs(it.range.first - codePos) } else found
+                  for (m in sorted) out.add(cleanLink(m.groupValues[1]))
+
+                  val rest = listOf(
                       Regex("<video[^>]+src=[\"']([^\"']+)[\"']", RegexOption.IGNORE_CASE),
+                      Regex("\"video_url\"\\s*:\\s*\"([^\"]+)\""),
                       Regex("(https?:(?:\\\\/|/){2}[^\"'\\s<>]+?\\.mp4[^\"'\\s<>]*)")
                   )
-                  for (p in pats) {
-                      val m = p.find(html) ?: continue
-                      val v = m.groupValues[1]
-                          .replace("\\u0026", "&")
-                          .replace("\\/", "/")
-                          .replace("&amp;", "&")
-                      if (v.startsWith("http")) return v
+                  for (p in rest) {
+                      for (m in p.findAll(html)) out.add(cleanLink(m.groupValues[1]))
                   }
-                  return null
+                  return out.filter { it.startsWith("http") && !it.contains("audio", true) }.distinct()
               }
 
-              // Fallback when yt-dlp can't handle a Threads post: read the page's video link directly.
+              private fun hasVideo(f: File): Boolean {
+                  val r = MediaMetadataRetriever()
+                  return try {
+                      r.setDataSource(f.absolutePath)
+                      r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_VIDEO) == "yes"
+                  } catch (e: Throwable) {
+                      false
+                  } finally {
+                      try {
+                          r.release()
+                      } catch (e: Throwable) {
+                      }
+                  }
+              }
+
+              // Reads the video link straight from the Threads page and keeps only a file that really has a picture.
               private fun directThreads(url: String, dir: File): Boolean {
                   val uas = listOf(
                       "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
@@ -533,16 +561,22 @@ jobs:
                       for (ua in uas) {
                           try {
                               val html = httpGet(u, ua)
-                              val v = findVideoUrl(html)
-                              if (v == null) {
+                              val links = findVideoUrls(html, id)
+                              if (links.isEmpty()) {
                                   directLog += "no-video(" + html.length + ") "
                                   continue
                               }
-                              val f = File(dir, "Threads [" + id + "].mp4")
-                              httpDownload(v, ua, f)
-                              if (f.length() > 10000L) return true
-                              f.delete()
-                              directLog += "small-file "
+                              for (v in links.take(6)) {
+                                  val f = File(dir, "Threads [" + id + "].mp4")
+                                  try {
+                                      httpDownload(v, ua, f)
+                                      if (f.length() > 10000L && hasVideo(f)) return true
+                                      directLog += "not-video "
+                                  } catch (e: Throwable) {
+                                      directLog += (e.message ?: e.javaClass.simpleName).take(40) + " "
+                                  }
+                                  f.delete()
+                              }
                           } catch (e: Throwable) {
                               directLog += (e.message ?: e.javaClass.simpleName).take(40) + " "
                           }
