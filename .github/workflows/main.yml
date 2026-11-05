@@ -64,6 +64,8 @@ jobs:
               id 'org.jetbrains.kotlin.android'
           }
 
+          def appVersionCode = Integer.parseInt((project.findProperty('vCode') ?: '1').toString())
+
           android {
               namespace 'com.sharedl.app'
               compileSdk 34
@@ -72,8 +74,8 @@ jobs:
                   applicationId 'com.sharedl.app'
                   minSdk 24
                   targetSdk 34
-                  versionCode (project.findProperty('vCode') ?: '1').toString().toInteger()
-                  versionName '1.0'
+                  versionCode = appVersionCode
+                  versionName = '1.0'
                   ndk {
                       abiFilters 'arm64-v8a', 'armeabi-v7a'
                   }
