@@ -168,6 +168,10 @@ jobs:
                       android:exported="false" />
 
                   <activity
+                      android:name=".InstaLoginActivity"
+                      android:exported="false" />
+
+                  <activity
                       android:name=".PlayerActivity"
                       android:exported="false"
                       android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|uiMode"
@@ -311,7 +315,8 @@ jobs:
                       } catch (t: Throwable) {
                           val full = (t.message ?: t.toString()).trim()
                           val m = full.take(400)
-                          Bus.post("❌ خطا: $m")
+                          val hint = if (m.contains("Instagram", true)) "\nℹ️ اگر مشکل ادامه داشت، از صفحه اصلی «ورود به اینستاگرام» را (دوباره) انجام بده." else ""
+                          Bus.post("❌ خطا: $m" + hint)
                           notify(2, buildNotif("❌ دانلود ناموفق بود: " + full.lines().last().take(100), -1, false))
                       } finally {
                           if (pending.decrementAndGet() == 0) {
@@ -330,6 +335,10 @@ jobs:
                   req.addOption("--retries", "5")
                   req.addOption("--fragment-retries", "5")
                   req.addOption("-o", dir.absolutePath + "/%(title).80s [%(id)s].%(ext)s")
+                  val igCookies = File(filesDir, "ig_cookies.txt")
+                  if (igCookies.exists() && Regex("instagram\\.com", RegexOption.IGNORE_CASE).containsMatchIn(url)) {
+                      req.addOption("--cookies", igCookies.absolutePath)
+                  }
                   if (client != null) {
                       req.addOption("--extractor-args", "youtube:player_client=" + client)
                   }
@@ -357,7 +366,8 @@ jobs:
                   return req
               }
 
-              private fun download(url: String, mode: String) {
+              private fun download(rawUrl: String, mode: String) {
+                  val url = resolveShare(rawUrl)
                   val q = when (mode) {
                       "best" -> "بهترین کیفیت"
                       "audio" -> "MP3"
@@ -487,6 +497,41 @@ jobs:
               }
 
               // ---------- Threads helpers ----------
+              // Short "share" links (threads.com/share/XXXX) hide the real post address; resolve it first.
+              private fun resolveShare(u: String): String {
+                  if (!u.contains("/share/")) return u
+                  if (!Regex("threads\\.(net|com)|instagram\\.com", RegexOption.IGNORE_CASE).containsMatchIn(u)) return u
+                  val uas = listOf(
+                      "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+                      "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)"
+                  )
+                  for (ua in uas) {
+                      try {
+                          val c = URL(u).openConnection() as HttpURLConnection
+                          c.connectTimeout = 20000
+                          c.readTimeout = 25000
+                          c.instanceFollowRedirects = true
+                          c.setRequestProperty("User-Agent", ua)
+                          c.setRequestProperty("Accept-Language", "en-US,en;q=0.9")
+                          val code = c.responseCode
+                          val fin = c.url.toString()
+                          if (!fin.contains("/share/")) {
+                              c.disconnect()
+                              return fin
+                          }
+                          var body = ""
+                          if (code in 200..299) body = c.inputStream.use { it.readBytes() }.toString(Charsets.UTF_8)
+                          c.disconnect()
+                          val m = Regex("(?:og:url|canonical)[^>]*?(?:content|href)=[\"'](https?://[^\"']+/(?:post|p|reel)/[A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE).find(body)
+                          if (m != null) return m.groupValues[1]
+                          val m2 = Regex("https?:(?:\\\\+/|/){2}(?:www\\.)?threads\\.(?:net|com)(?:\\\\+/|/)@[A-Za-z0-9._]+(?:\\\\+/|/)post(?:\\\\+/|/)[A-Za-z0-9_-]+").find(body)
+                          if (m2 != null) return cleanLink(m2.value)
+                      } catch (e: Throwable) {
+                      }
+                  }
+                  return u
+              }
+
               private fun threadsUrls(url: String): List<String> {
                   val clean = url.substringBefore('?').substringBefore('#')
                   val net = clean.replace("threads.com", "threads.net", true)
@@ -502,6 +547,10 @@ jobs:
                   c.setRequestProperty("User-Agent", ua)
                   c.setRequestProperty("Accept-Language", "en-US,en;q=0.9")
                   c.setRequestProperty("Accept", "text/html,application/xhtml+xml,*/*;q=0.8")
+                  if (u.contains("instagram.com")) {
+                      val ck = getSharedPreferences("prefs", MODE_PRIVATE).getString("igCookie", null)
+                      if (!ck.isNullOrEmpty()) c.setRequestProperty("Cookie", ck)
+                  }
                   val code = c.responseCode
                   if (code !in 200..299) {
                       c.disconnect()
@@ -801,6 +850,7 @@ jobs:
           import android.content.Intent
           import android.content.pm.PackageManager
           import android.graphics.Color
+          import java.io.File
           import android.graphics.Typeface
           import android.os.Build
           import android.os.Bundle
@@ -822,6 +872,7 @@ jobs:
               private val chips = ArrayList<TextView>()
               private var quality = 2
               private var pendingUrl: String? = null
+              private lateinit var igBtn: TextView
 
               private val modes = listOf("best", "1080", "720", "480", "360", "audio")
               private val labels = listOf("بهترین کیفیت", "1080p", "720p", "480p", "360p", "فقط صدا (MP3)")
@@ -869,6 +920,7 @@ jobs:
                   super.onResume()
                   Bus.onChange = { refreshLog() }
                   refreshLog()
+                  refreshInsta()
               }
 
               override fun onNewIntent(intent: Intent) {
@@ -967,6 +1019,34 @@ jobs:
               private fun autoUpdate() {
                   val last = getSharedPreferences("prefs", MODE_PRIVATE).getLong("lastUpdate", 0L)
                   if (System.currentTimeMillis() - last > 24L * 3600L * 1000L) updateEngine()
+              }
+
+              private fun refreshInsta() {
+                  val on = getSharedPreferences("prefs", MODE_PRIVATE).getBoolean("igLogin", false)
+                  igBtn.text = if (on) "✅ وارد اینستاگرام شده‌ای — خروج" else "🔑 ورود به اینستاگرام (برای پست‌های محدود)"
+                  igBtn.setTextColor(if (on) Ui.GREEN else Ui.MUTED)
+              }
+
+              private fun onInstaClick() {
+                  val on = getSharedPreferences("prefs", MODE_PRIVATE).getBoolean("igLogin", false)
+                  if (on) {
+                      AlertDialog.Builder(this)
+                          .setTitle("خروج از اینستاگرام؟")
+                          .setMessage("نشست ذخیره‌شده پاک می‌شود.")
+                          .setPositiveButton("خروج") { _, _ -> logoutInsta() }
+                          .setNegativeButton("لغو", null)
+                          .show()
+                  } else {
+                      startActivity(Intent(this, InstaLoginActivity::class.java))
+                  }
+              }
+
+              private fun logoutInsta() {
+                  File(filesDir, "ig_cookies.txt").delete()
+                  getSharedPreferences("prefs", MODE_PRIVATE).edit().remove("igCookie").putBoolean("igLogin", false).apply()
+                  android.webkit.CookieManager.getInstance().removeAllCookies(null)
+                  android.webkit.CookieManager.getInstance().flush()
+                  refreshInsta()
               }
 
               private fun refreshLog() {
@@ -1122,6 +1202,16 @@ jobs:
                   }
                   askRow.addView(sw)
                   root.addView(askRow, lp(14))
+
+                  // ---------- Instagram login ----------
+                  igBtn = label("", 13f, Ui.MUTED, true)
+                  igBtn.gravity = Gravity.CENTER
+                  igBtn.background = rect(Color.TRANSPARENT, 16, Ui.CARD_STROKE, 1)
+                  igBtn.setOnClickListener { onInstaClick() }
+                  val igp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(46))
+                  igp.topMargin = dp(10)
+                  root.addView(igBtn, igp)
+                  refreshInsta()
 
                   // ---------- Downloaded files card ----------
                   val files = LinearLayout(this)
@@ -1734,6 +1824,89 @@ jobs:
                       bind(h, items[position])
                       return v
                   }
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/sharedl/app/InstaLoginActivity.kt <<'EOF'
+          package com.sharedl.app
+
+          import android.app.Activity
+          import android.os.Bundle
+          import android.webkit.CookieManager
+          import android.webkit.WebView
+          import android.webkit.WebViewClient
+          import android.widget.LinearLayout
+          import android.widget.TextView
+          import android.widget.Toast
+          import java.io.File
+
+          class InstaLoginActivity : Activity() {
+
+              private lateinit var web: WebView
+              private var done = false
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  window.statusBarColor = Ui.BG_TOP
+                  window.navigationBarColor = Ui.BG_BOTTOM
+
+                  val root = LinearLayout(this)
+                  root.orientation = LinearLayout.VERTICAL
+                  root.setBackgroundColor(Ui.BG_TOP)
+
+                  val tip = TextView(this)
+                  tip.text = "ترجیحاً با یک حساب دوم وارد شو. بعد از ورود موفق، این صفحه خودکار بسته می‌شود."
+                  tip.setTextColor(Ui.MUTED)
+                  tip.textSize = 13f
+                  tip.setPadding(Ui.dp(this, 16), Ui.dp(this, 12), Ui.dp(this, 16), Ui.dp(this, 12))
+                  root.addView(tip)
+
+                  web = WebView(this)
+                  web.settings.javaScriptEnabled = true
+                  web.settings.domStorageEnabled = true
+                  CookieManager.getInstance().setAcceptCookie(true)
+                  CookieManager.getInstance().setAcceptThirdPartyCookies(web, true)
+                  web.webViewClient = object : WebViewClient() {
+                      override fun onPageFinished(view: WebView?, url: String?) {
+                          check()
+                      }
+                  }
+                  root.addView(web, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+                  setContentView(root)
+                  web.loadUrl("https://www.instagram.com/accounts/login/")
+              }
+
+              private fun check() {
+                  if (done) return
+                  val c = CookieManager.getInstance().getCookie("https://www.instagram.com") ?: return
+                  if (!c.contains("sessionid=")) return
+                  done = true
+                  save(c)
+                  Toast.makeText(this, "ورود به اینستاگرام انجام شد ✅", Toast.LENGTH_SHORT).show()
+                  finish()
+              }
+
+              // Saves the session as a Netscape cookies file that yt-dlp understands.
+              private fun save(c: String) {
+                  CookieManager.getInstance().flush()
+                  val exp = System.currentTimeMillis() / 1000 + 365L * 24L * 3600L
+                  val sb = StringBuilder("# Netscape HTTP Cookie File\n")
+                  for (part in c.split(";")) {
+                      val p = part.trim()
+                      val i = p.indexOf('=')
+                      if (i <= 0) continue
+                      sb.append(".instagram.com\tTRUE\t/\tTRUE\t").append(exp).append('\t')
+                          .append(p.substring(0, i)).append('\t').append(p.substring(i + 1)).append('\n')
+                  }
+                  File(filesDir, "ig_cookies.txt").writeText(sb.toString())
+                  getSharedPreferences("prefs", MODE_PRIVATE).edit()
+                      .putString("igCookie", c).putBoolean("igLogin", true).apply()
+              }
+
+              override fun onDestroy() {
+                  web.destroy()
+                  super.onDestroy()
               }
           }
           EOF
