@@ -351,7 +351,12 @@ jobs:
               }
 
               private fun download(url: String, mode: String) {
-                  Bus.post("⏳ شروع: $url")
+                  val q = when (mode) {
+                      "best" -> "بهترین کیفیت"
+                      "audio" -> "MP3"
+                      else -> mode + "p"
+                  }
+                  Bus.post("⏳ شروع (" + q + "): $url")
                   Engine.ensureInit(this)
 
                   val dir = File(cacheDir, "dl_" + System.currentTimeMillis())
@@ -748,6 +753,7 @@ jobs:
 
           import android.Manifest
           import android.app.Activity
+          import android.app.AlertDialog
           import android.content.ClipboardManager
           import android.content.Context
           import android.content.Intent
@@ -846,8 +852,26 @@ jobs:
                       pendingUrl = url
                       requestPermissions(p.toTypedArray(), 7)
                   } else {
-                      startDownload(url, true)
+                      proceedShare(url)
                   }
+              }
+
+              // Shared from another app: ask for the quality (if enabled) or use the saved one.
+              private fun proceedShare(url: String) {
+                  val ask = getSharedPreferences("prefs", MODE_PRIVATE).getBoolean("ask", true)
+                  if (ask) askQuality(url) else startDownload(url, true)
+              }
+
+              private fun askQuality(url: String) {
+                  AlertDialog.Builder(this)
+                      .setTitle("کیفیت دانلود")
+                      .setSingleChoiceItems(labels.toTypedArray(), quality) { d, which ->
+                          quality = which
+                          d.dismiss()
+                          startDownload(url, true)
+                      }
+                      .setOnCancelListener { finish() }
+                      .show()
               }
 
               private fun neededPerms(all: Boolean): List<String> {
@@ -869,7 +893,7 @@ jobs:
                   super.onRequestPermissionsResult(code, perms, results)
                   pendingUrl?.let {
                       pendingUrl = null
-                      startDownload(it, true)
+                      proceedShare(it)
                   }
               }
 
@@ -882,7 +906,7 @@ jobs:
                   i.putExtra("mode", modes[idx])
                   if (Build.VERSION.SDK_INT >= 26) startForegroundService(i) else startService(i)
 
-                  Toast.makeText(this, "دانلود شروع شد ⬇️", Toast.LENGTH_SHORT).show()
+                  Toast.makeText(this, "دانلود شروع شد ⬇️ (" + labels[idx] + ")", Toast.LENGTH_SHORT).show()
                   if (finishAfter) finish()
               }
 
@@ -1039,6 +1063,23 @@ jobs:
                   card.addView(dl, dlp)
 
                   root.addView(card, lp())
+
+                  // ---------- Ask quality on share ----------
+                  val askRow = LinearLayout(this)
+                  askRow.orientation = LinearLayout.HORIZONTAL
+                  askRow.gravity = Gravity.CENTER_VERTICAL
+                  askRow.setPadding(dp(6), dp(6), dp(6), dp(6))
+                  askRow.addView(
+                      label("پرسیدن کیفیت هنگام اشتراک‌گذاری از برنامه‌های دیگر", 13f, Ui.MUTED),
+                      LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                  )
+                  val sw = android.widget.Switch(this)
+                  sw.isChecked = getSharedPreferences("prefs", MODE_PRIVATE).getBoolean("ask", true)
+                  sw.setOnCheckedChangeListener { _, c ->
+                      getSharedPreferences("prefs", MODE_PRIVATE).edit().putBoolean("ask", c).apply()
+                  }
+                  askRow.addView(sw)
+                  root.addView(askRow, lp(14))
 
                   // ---------- Downloaded files card ----------
                   val files = LinearLayout(this)
