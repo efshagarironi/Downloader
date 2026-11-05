@@ -1,0 +1,908 @@
+name: Build ShareDL APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Generate Android project
+        run: |
+          mkdir -p app/src/main/java/com/sharedl/app app/src/main/res/mipmap-anydpi-v26 app/src/main/res/mipmap-anydpi app/src/main/res/drawable
+
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = 'ShareDL'
+          include ':app'
+          EOF
+
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.5.2' apply false
+              id 'org.jetbrains.kotlin.android' version '2.0.21' apply false
+          }
+          EOF
+
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          kotlin.code.style=official
+          EOF
+
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
+          }
+
+          android {
+              namespace 'com.sharedl.app'
+              compileSdk 34
+
+              defaultConfig {
+                  applicationId 'com.sharedl.app'
+                  minSdk 24
+                  targetSdk 34
+                  versionCode 1
+                  versionName '1.0'
+                  ndk {
+                      abiFilters 'arm64-v8a'
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
+
+              packaging {
+                  jniLibs {
+                      useLegacyPackaging = true
+                  }
+              }
+
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                  }
+              }
+          }
+
+          dependencies {
+              implementation 'androidx.core:core-ktx:1.13.1'
+              implementation 'io.github.junkfood02.youtubedl-android:library:0.18.1'
+              implementation 'io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1'
+          }
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+              <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+              <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+              <uses-permission
+                  android:name="android.permission.READ_EXTERNAL_STORAGE"
+                  android:maxSdkVersion="32" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+              <uses-permission
+                  android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+                  android:maxSdkVersion="28" />
+
+              <application
+                  android:icon="@mipmap/ic_launcher"
+                  android:label="دانلودر ویدئو"
+                  android:supportsRtl="true"
+                  android:largeHeap="true"
+                  android:usesCleartextTraffic="true"
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:launchMode="singleTop"
+                      android:windowSoftInputMode="adjustResize">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                      <intent-filter>
+                          <action android:name="android.intent.action.SEND" />
+                          <category android:name="android.intent.category.DEFAULT" />
+                          <data android:mimeType="text/plain" />
+                      </intent-filter>
+                  </activity>
+
+                  <activity
+                      android:name=".DownloadsActivity"
+                      android:exported="false" />
+
+                  <activity
+                      android:name=".PlayerActivity"
+                      android:exported="false"
+                      android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden" />
+
+                  <service
+                      android:name=".DownloadService"
+                      android:exported="false"
+                      android:foregroundServiceType="dataSync" />
+              </application>
+          </manifest>
+          EOF
+
+          cat > app/src/main/res/drawable/ic_launcher_foreground.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+              <path
+                  android:fillColor="#16A34A"
+                  android:strokeColor="#16A34A"
+                  android:strokeWidth="6"
+                  android:strokeLineJoin="round"
+                  android:pathData="M42,26 L66,26 L66,50 L82,50 L54,80 L26,50 L42,50 Z" />
+          </vector>
+          EOF
+
+          cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@android:color/white" />
+              <foreground android:drawable="@drawable/ic_launcher_foreground" />
+              <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+          </adaptive-icon>
+          EOF
+
+          cat > app/src/main/res/mipmap-anydpi/ic_launcher.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+              <path
+                  android:fillColor="#FFFFFF"
+                  android:pathData="M28,6 H80 A22,22 0 0 1 102,28 V80 A22,22 0 0 1 80,102 H28 A22,22 0 0 1 6,80 V28 A22,22 0 0 1 28,6 Z" />
+              <path
+                  android:fillColor="#16A34A"
+                  android:strokeColor="#16A34A"
+                  android:strokeWidth="6"
+                  android:strokeLineJoin="round"
+                  android:pathData="M42,26 L66,26 L66,50 L82,50 L54,80 L26,50 L42,50 Z" />
+          </vector>
+          EOF
+
+          cat > app/src/main/java/com/sharedl/app/Core.kt <<'EOF'
+          package com.sharedl.app
+
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.Service
+          import android.content.ContentValues
+          import android.content.Context
+          import android.content.Intent
+          import android.media.MediaScannerConnection
+          import android.os.Build
+          import android.os.Environment
+          import android.os.Handler
+          import android.os.IBinder
+          import android.os.Looper
+          import android.provider.MediaStore
+          import android.webkit.MimeTypeMap
+          import androidx.core.app.NotificationCompat
+          import com.yausername.ffmpeg.FFmpeg
+          import com.yausername.youtubedl_android.YoutubeDL
+          import com.yausername.youtubedl_android.YoutubeDLRequest
+          import java.io.File
+          import java.util.concurrent.Executors
+          import java.util.concurrent.atomic.AtomicInteger
+
+          object Bus {
+              private val log = StringBuilder()
+              private val handler = Handler(Looper.getMainLooper())
+              var onChange: (() -> Unit)? = null
+
+              fun post(msg: String) {
+                  synchronized(log) {
+                      log.append(msg).append("\n\n")
+                      if (log.length > 20000) log.delete(0, log.length - 15000)
+                  }
+                  handler.post { onChange?.invoke() }
+              }
+
+              fun snapshot(): String = synchronized(log) { log.toString() }
+          }
+
+          object Engine {
+              private var ready = false
+
+              @Synchronized
+              fun ensureInit(ctx: Context) {
+                  if (ready) return
+                  val app = ctx.applicationContext
+                  YoutubeDL.getInstance().init(app)
+                  FFmpeg.getInstance().init(app)
+                  ready = true
+              }
+          }
+
+          class DownloadService : Service() {
+
+              private val exec = Executors.newSingleThreadExecutor()
+              private val pending = AtomicInteger(0)
+
+              override fun onBind(intent: Intent?): IBinder? = null
+
+              override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+                  ensureChannel()
+                  startForeground(1, buildNotif("در صف دانلود…", -1, true))
+                  val url = intent?.getStringExtra("url")
+                  val mode = intent?.getStringExtra("mode") ?: "720"
+                  if (url == null) {
+                      if (pending.get() == 0) {
+                          stopForeground(true)
+                          stopSelf()
+                      }
+                      return START_NOT_STICKY
+                  }
+                  pending.incrementAndGet()
+                  exec.execute {
+                      try {
+                          download(url, mode)
+                      } catch (t: Throwable) {
+                          val m = (t.message ?: t.toString()).take(400)
+                          Bus.post("❌ خطا: $m")
+                          notify(2, buildNotif("❌ دانلود ناموفق بود", -1, false))
+                      } finally {
+                          if (pending.decrementAndGet() == 0) {
+                              stopForeground(true)
+                              stopSelf()
+                          }
+                      }
+                  }
+                  return START_NOT_STICKY
+              }
+
+              private fun download(url: String, mode: String) {
+                  Bus.post("⏳ شروع: $url")
+                  Engine.ensureInit(this)
+
+                  val dir = File(cacheDir, "dl_" + System.currentTimeMillis())
+                  dir.mkdirs()
+
+                  val req = YoutubeDLRequest(url)
+                  req.addOption("--no-playlist")
+                  req.addOption("--no-mtime")
+                  req.addOption("-o", dir.absolutePath + "/%(title).80s [%(id)s].%(ext)s")
+
+                  if (mode == "audio") {
+                      req.addOption("-x")
+                      req.addOption("--audio-format", "mp3")
+                      req.addOption("--audio-quality", "0")
+                  } else {
+                      val f = if (mode == "best") {
+                          "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b"
+                      } else {
+                          "bv*[height<=$mode][ext=mp4]+ba[ext=m4a]/b[height<=$mode][ext=mp4]/bv*[height<=$mode]+ba/b[height<=$mode]/b"
+                      }
+                      req.addOption("-f", f)
+                      req.addOption("--merge-output-format", "mp4")
+                  }
+
+                  var lastPct = -1
+                  YoutubeDL.getInstance().execute(req, "dl_" + System.currentTimeMillis()) { progress, _, _ ->
+                      val p = progress.toInt()
+                      if (p != lastPct && p in 0..100) {
+                          lastPct = p
+                          notify(1, buildNotif("در حال دانلود… $p%", p, true))
+                      }
+                  }
+
+                  val files = dir.listFiles()?.filter {
+                      it.isFile && it.extension.lowercase() !in setOf("part", "ytdl", "temp")
+                  } ?: emptyList()
+
+                  if (files.isEmpty()) throw RuntimeException("فایلی دانلود نشد")
+
+                  for (f in files) {
+                      notify(1, buildNotif("در حال ذخیره…", -1, true))
+                      saveToPublic(f)
+                      Bus.post("✅ ذخیره شد: " + f.name)
+                      notify(2, buildNotif("✅ " + f.name, -1, false))
+                  }
+                  dir.deleteRecursively()
+              }
+
+              private fun saveToPublic(file: File) {
+                  val ext = file.extension.lowercase()
+                  val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
+                  val isAudio = mime.startsWith("audio")
+                  val isVideo = mime.startsWith("video")
+                  val isImage = mime.startsWith("image")
+
+                  if (Build.VERSION.SDK_INT >= 29) {
+                      val (collection, rel) = when {
+                          isAudio -> Pair(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, Environment.DIRECTORY_MUSIC + "/ShareDL")
+                          isVideo -> Pair(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, Environment.DIRECTORY_MOVIES + "/ShareDL")
+                          isImage -> Pair(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, Environment.DIRECTORY_PICTURES + "/ShareDL")
+                          else -> Pair(MediaStore.Downloads.EXTERNAL_CONTENT_URI, Environment.DIRECTORY_DOWNLOADS + "/ShareDL")
+                      }
+                      val values = ContentValues().apply {
+                          put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)
+                          put(MediaStore.MediaColumns.MIME_TYPE, mime)
+                          put(MediaStore.MediaColumns.RELATIVE_PATH, rel)
+                          put(MediaStore.MediaColumns.IS_PENDING, 1)
+                      }
+                      val uri = contentResolver.insert(collection, values)
+                          ?: throw RuntimeException("ذخیره در حافظه ممکن نشد")
+                      contentResolver.openOutputStream(uri)!!.use { out ->
+                          file.inputStream().use { it.copyTo(out) }
+                      }
+                      val done = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
+                      contentResolver.update(uri, done, null, null)
+                  } else {
+                      val base = Environment.getExternalStoragePublicDirectory(
+                          when {
+                              isAudio -> Environment.DIRECTORY_MUSIC
+                              isVideo -> Environment.DIRECTORY_MOVIES
+                              else -> Environment.DIRECTORY_DOWNLOADS
+                          }
+                      )
+                      val target = File(base, "ShareDL")
+                      target.mkdirs()
+                      val out = File(target, file.name)
+                      file.copyTo(out, overwrite = true)
+                      MediaScannerConnection.scanFile(this, arrayOf(out.absolutePath), arrayOf(mime), null)
+                  }
+              }
+
+              private fun ensureChannel() {
+                  if (Build.VERSION.SDK_INT >= 26) {
+                      val ch = NotificationChannel("dl", "دانلودها", NotificationManager.IMPORTANCE_LOW)
+                      getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
+                  }
+              }
+
+              private fun buildNotif(text: String, pct: Int, ongoing: Boolean) =
+                  NotificationCompat.Builder(this, "dl")
+                      .setSmallIcon(if (ongoing) android.R.drawable.stat_sys_download else android.R.drawable.stat_sys_download_done)
+                      .setContentTitle("دانلودر ویدئو")
+                      .setContentText(text)
+                      .setOngoing(ongoing)
+                      .setOnlyAlertOnce(true)
+                      .apply {
+                          if (pct >= 0) setProgress(100, pct, false)
+                          else if (ongoing) setProgress(0, 0, true)
+                      }
+                      .build()
+
+              private fun notify(id: Int, n: android.app.Notification) {
+                  try {
+                      getSystemService(NotificationManager::class.java).notify(id, n)
+                  } catch (_: Throwable) {
+                  }
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/sharedl/app/MainActivity.kt <<'EOF'
+          package com.sharedl.app
+
+          import android.Manifest
+          import android.app.Activity
+          import android.content.Intent
+          import android.content.pm.PackageManager
+          import android.os.Build
+          import android.os.Bundle
+          import android.view.Gravity
+          import android.view.View
+          import android.widget.ArrayAdapter
+          import android.widget.Button
+          import android.widget.EditText
+          import android.widget.LinearLayout
+          import android.widget.ScrollView
+          import android.widget.Spinner
+          import android.widget.TextView
+          import android.widget.Toast
+          import android.graphics.Color
+          import android.graphics.drawable.GradientDrawable
+          import com.yausername.youtubedl_android.YoutubeDL
+
+          class MainActivity : Activity() {
+
+              private lateinit var logView: TextView
+              private lateinit var scroll: ScrollView
+              private lateinit var input: EditText
+              private lateinit var spinner: Spinner
+              private var pendingUrl: String? = null
+
+              private val modes = listOf("best", "1080", "720", "480", "360", "audio")
+              private val labels = listOf("بهترین کیفیت", "1080p", "720p", "480p", "360p", "فقط صدا (MP3)")
+              private val urlRegex = Regex("https?://\\S+")
+
+              private fun dp(x: Int) = (x * resources.displayMetrics.density).toInt()
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  buildUi()
+                  Bus.onChange = { refreshLog() }
+                  refreshLog()
+
+                  val shared = extractShared(intent)
+                  if (shared != null) {
+                      handleShare(shared)
+                  } else {
+                      if (needsPerms()) requestPerms()
+                      autoUpdate()
+                  }
+              }
+
+              override fun onNewIntent(intent: Intent) {
+                  super.onNewIntent(intent)
+                  setIntent(intent)
+                  extractShared(intent)?.let { handleShare(it) }
+              }
+
+              override fun onDestroy() {
+                  Bus.onChange = null
+                  super.onDestroy()
+              }
+
+              private fun extractShared(i: Intent?): String? {
+                  if (i?.action != Intent.ACTION_SEND) return null
+                  val t = i.getStringExtra(Intent.EXTRA_TEXT) ?: return null
+                  return urlRegex.find(t)?.value
+              }
+
+              private fun handleShare(url: String) {
+                  if (needsPerms()) {
+                      pendingUrl = url
+                      requestPerms()
+                  } else {
+                      startDownload(url, true)
+                  }
+              }
+
+              private fun neededPerms(): List<String> {
+                  val l = ArrayList<String>()
+                  if (Build.VERSION.SDK_INT >= 33) l.add(Manifest.permission.POST_NOTIFICATIONS)
+                  if (Build.VERSION.SDK_INT < 29) l.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                  return l.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+              }
+
+              private fun needsPerms() = neededPerms().isNotEmpty()
+
+              private fun requestPerms() {
+                  requestPermissions(neededPerms().toTypedArray(), 7)
+              }
+
+              override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, results: IntArray) {
+                  super.onRequestPermissionsResult(code, perms, results)
+                  pendingUrl?.let {
+                      pendingUrl = null
+                      startDownload(it, true)
+                  }
+              }
+
+              private fun startDownload(url: String, finishAfter: Boolean) {
+                  val idx = spinner.selectedItemPosition.coerceIn(0, modes.size - 1)
+                  getSharedPreferences("prefs", MODE_PRIVATE).edit().putInt("q", idx).apply()
+
+                  val i = Intent(this, DownloadService::class.java)
+                  i.putExtra("url", url)
+                  i.putExtra("mode", modes[idx])
+                  if (Build.VERSION.SDK_INT >= 26) startForegroundService(i) else startService(i)
+
+                  Toast.makeText(this, "دانلود شروع شد ⬇️", Toast.LENGTH_SHORT).show()
+                  if (finishAfter) finish()
+              }
+
+              private fun updateEngine() {
+                  Thread {
+                      try {
+                          Bus.post("⏳ در حال آپدیت موتور دانلود…")
+                          Engine.ensureInit(applicationContext)
+                          val s = YoutubeDL.getInstance().updateYoutubeDL(applicationContext)
+                          getSharedPreferences("prefs", MODE_PRIVATE).edit()
+                              .putLong("lastUpdate", System.currentTimeMillis()).apply()
+                          Bus.post("✅ آپدیت موتور انجام شد ($s)")
+                      } catch (t: Throwable) {
+                          Bus.post("❌ آپدیت ناموفق: " + (t.message ?: t.toString()).take(300))
+                      }
+                  }.start()
+              }
+
+              private fun autoUpdate() {
+                  val last = getSharedPreferences("prefs", MODE_PRIVATE).getLong("lastUpdate", 0L)
+                  if (System.currentTimeMillis() - last > 24L * 3600L * 1000L) updateEngine()
+              }
+
+              private fun refreshLog() {
+                  val s = Bus.snapshot()
+                  logView.text = if (s.isEmpty()) "هنوز دانلودی انجام نشده." else s
+                  scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+              }
+
+              private fun buildUi() {
+                  val root = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setPadding(dp(20), dp(40), dp(20), dp(20))
+                      layoutDirection = View.LAYOUT_DIRECTION_RTL
+                  }
+
+                  root.addView(TextView(this).apply {
+                      text = "دانلودر ویدئو"
+                      textSize = 26f
+                      gravity = Gravity.START
+                  })
+
+                  root.addView(TextView(this).apply {
+                      text = "از یوتیوب، اینستاگرام، X، تیک‌تاک، تردز و ... روی «اشتراک‌گذاری» بزن و این برنامه را انتخاب کن."
+                      textSize = 14f
+                      setPadding(0, dp(8), 0, dp(16))
+                  })
+
+                  input = EditText(this).apply {
+                      hint = "یا لینک را اینجا بچسبان"
+                      setSingleLine(true)
+                  }
+                  root.addView(input)
+
+                  spinner = Spinner(this).apply {
+                      adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, labels)
+                      setSelection(getSharedPreferences("prefs", MODE_PRIVATE).getInt("q", 2).coerceIn(0, labels.size - 1))
+                  }
+                  root.addView(spinner)
+
+                  root.addView(Button(this).apply {
+                      text = "دانلود"
+                      setOnClickListener {
+                          val url = urlRegex.find(input.text.toString())?.value
+                          if (url == null) {
+                              Toast.makeText(this@MainActivity, "یک لینک معتبر وارد کن", Toast.LENGTH_SHORT).show()
+                          } else {
+                              input.setText("")
+                              startDownload(url, false)
+                          }
+                      }
+                  })
+
+                  root.addView(Button(this).apply {
+                      text = "آپدیت موتور دانلود (yt-dlp)"
+                      setOnClickListener { updateEngine() }
+                  })
+
+                  val box = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      gravity = Gravity.CENTER
+                      setPadding(dp(16), dp(18), dp(16), dp(18))
+                      background = GradientDrawable().apply {
+                          setColor(Color.parseColor("#E8F5E9"))
+                          setStroke(dp(2), Color.parseColor("#16A34A"))
+                          cornerRadius = dp(14).toFloat()
+                      }
+                      isClickable = true
+                      setOnClickListener {
+                          startActivity(Intent(this@MainActivity, DownloadsActivity::class.java))
+                      }
+                  }
+                  box.addView(TextView(this).apply {
+                      text = "📂  فایل‌های دانلود شده"
+                      textSize = 17f
+                      setTextColor(Color.parseColor("#14532D"))
+                      gravity = Gravity.CENTER
+                  })
+                  box.addView(TextView(this).apply {
+                      text = "جدیدترین‌ها اول • برای پخش لمس کن"
+                      textSize = 12f
+                      setTextColor(Color.parseColor("#4B5563"))
+                      gravity = Gravity.CENTER
+                  })
+                  val boxLp = LinearLayout.LayoutParams(
+                      LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                  boxLp.topMargin = dp(12)
+                  root.addView(box, boxLp)
+
+                  logView = TextView(this).apply {
+                      textSize = 13f
+                      setPadding(0, dp(8), 0, dp(8))
+                      setTextIsSelectable(true)
+                  }
+                  scroll = ScrollView(this).apply { addView(logView) }
+                  root.addView(scroll, LinearLayout.LayoutParams(
+                      LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+
+                  setContentView(root)
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/sharedl/app/Player.kt <<'EOF'
+          package com.sharedl.app
+
+          import android.Manifest
+          import android.app.Activity
+          import android.content.ContentUris
+          import android.content.Intent
+          import android.content.pm.PackageManager
+          import android.graphics.Color
+          import android.net.Uri
+          import android.os.Build
+          import android.os.Bundle
+          import android.provider.MediaStore
+          import android.view.Gravity
+          import android.view.View
+          import android.view.ViewGroup
+          import android.view.WindowManager
+          import android.widget.BaseAdapter
+          import android.widget.FrameLayout
+          import android.widget.LinearLayout
+          import android.widget.ListView
+          import android.widget.MediaController
+          import android.widget.TextView
+          import android.widget.Toast
+          import android.widget.VideoView
+          import java.util.Date
+          import java.util.Locale
+
+          class MediaItem(val uri: Uri, val name: String, val size: Long, val added: Long, val audio: Boolean)
+
+          class DownloadsActivity : Activity() {
+
+              private lateinit var list: ListView
+              private lateinit var empty: TextView
+              private var items: List<MediaItem> = emptyList()
+
+              private fun dp(x: Int) = (x * resources.displayMetrics.density).toInt()
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+
+                  val root = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      layoutDirection = View.LAYOUT_DIRECTION_RTL
+                      setPadding(dp(16), dp(36), dp(16), dp(8))
+                  }
+                  root.addView(TextView(this).apply {
+                      text = "فایل‌های دانلود شده"
+                      textSize = 22f
+                      setPadding(0, 0, 0, dp(8))
+                  })
+                  empty = TextView(this).apply {
+                      text = "هنوز فایلی دانلود نشده."
+                      textSize = 15f
+                      gravity = Gravity.CENTER
+                      setPadding(0, dp(40), 0, 0)
+                      visibility = View.GONE
+                  }
+                  root.addView(empty)
+                  list = ListView(this)
+                  root.addView(list, LinearLayout.LayoutParams(
+                      LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+                  setContentView(root)
+
+                  list.setOnItemClickListener { _, _, pos, _ ->
+                      val item = items[pos]
+                      val i = Intent(this, PlayerActivity::class.java)
+                      i.putExtra("uri", item.uri.toString())
+                      i.putExtra("name", item.name)
+                      startActivity(i)
+                  }
+
+                  askPerms()
+              }
+
+              override fun onResume() {
+                  super.onResume()
+                  reload()
+              }
+
+              private fun missingPerms(): List<String> {
+                  val all: List<String> = if (Build.VERSION.SDK_INT >= 33) {
+                      listOf(Manifest.permission.READ_MEDIA_VIDEO, Manifest.permission.READ_MEDIA_AUDIO)
+                  } else {
+                      listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+                  }
+                  return all.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+              }
+
+              private fun askPerms() {
+                  val need = missingPerms()
+                  val sp = getSharedPreferences("prefs", MODE_PRIVATE)
+                  if (need.isNotEmpty() && !sp.getBoolean("askedMedia", false)) {
+                      sp.edit().putBoolean("askedMedia", true).apply()
+                      requestPermissions(need.toTypedArray(), 11)
+                  }
+              }
+
+              override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, results: IntArray) {
+                  super.onRequestPermissionsResult(code, perms, results)
+                  reload()
+              }
+
+              private fun reload() {
+                  items = loadItems()
+                  empty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
+                  list.adapter = Adapter()
+              }
+
+              private fun loadItems(): List<MediaItem> {
+                  val out = ArrayList<MediaItem>()
+                  val cols = arrayOf(
+                      MediaStore.MediaColumns._ID,
+                      MediaStore.MediaColumns.DISPLAY_NAME,
+                      MediaStore.MediaColumns.SIZE,
+                      MediaStore.MediaColumns.DATE_ADDED
+                  )
+                  @Suppress("DEPRECATION")
+                  val col = if (Build.VERSION.SDK_INT >= 29) MediaStore.MediaColumns.RELATIVE_PATH else MediaStore.MediaColumns.DATA
+                  val sources = listOf(
+                      Pair(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, false),
+                      Pair(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, true)
+                  )
+                  for ((base, audio) in sources) {
+                      try {
+                          val c = contentResolver.query(
+                              base, cols, col + " LIKE ?", arrayOf("%/ShareDL/%"),
+                              MediaStore.MediaColumns.DATE_ADDED + " DESC"
+                          )
+                          if (c != null) {
+                              c.use {
+                                  while (it.moveToNext()) {
+                                      out.add(
+                                          MediaItem(
+                                              ContentUris.withAppendedId(base, it.getLong(0)),
+                                              it.getString(1) ?: "؟",
+                                              it.getLong(2),
+                                              it.getLong(3),
+                                              audio
+                                          )
+                                      )
+                                  }
+                              }
+                          }
+                      } catch (_: Throwable) {
+                      }
+                  }
+                  out.sortByDescending { it.added }
+                  return out
+              }
+
+              private fun fmtDate(sec: Long): String {
+                  val d = Date(sec * 1000)
+                  return try {
+                      android.icu.text.SimpleDateFormat(
+                          "yyyy/MM/dd  HH:mm",
+                          android.icu.util.ULocale("en_US@calendar=persian")
+                      ).format(d)
+                  } catch (_: Throwable) {
+                      java.text.SimpleDateFormat("yyyy/MM/dd  HH:mm", Locale.US).format(d)
+                  }
+              }
+
+              private fun fmtSize(b: Long): String =
+                  String.format(Locale.US, "%.1f MB", b / 1048576.0)
+
+              private inner class Adapter : BaseAdapter() {
+                  override fun getCount() = items.size
+                  override fun getItem(position: Int): Any = items[position]
+                  override fun getItemId(position: Int) = position.toLong()
+                  override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
+                      val m = items[position]
+                      val row = LinearLayout(this@DownloadsActivity).apply {
+                          orientation = LinearLayout.VERTICAL
+                          setPadding(dp(8), dp(12), dp(8), dp(12))
+                      }
+                      row.addView(TextView(this@DownloadsActivity).apply {
+                          text = (if (m.audio) "🎵 " else "🎬 ") + m.name
+                          textSize = 15f
+                          maxLines = 2
+                      })
+                      row.addView(TextView(this@DownloadsActivity).apply {
+                          text = fmtSize(m.size) + "  •  " + fmtDate(m.added)
+                          textSize = 12f
+                          setTextColor(Color.GRAY)
+                      })
+                      return row
+                  }
+              }
+          }
+
+          class PlayerActivity : Activity() {
+
+              private lateinit var vv: VideoView
+              private var pos = 0
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  val s = intent.getStringExtra("uri")
+                  if (s == null) {
+                      finish()
+                      return
+                  }
+                  window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                  window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+
+                  val frame = FrameLayout(this)
+                  frame.setBackgroundColor(Color.BLACK)
+                  vv = VideoView(this)
+                  frame.addView(vv, FrameLayout.LayoutParams(
+                      FrameLayout.LayoutParams.MATCH_PARENT,
+                      FrameLayout.LayoutParams.MATCH_PARENT,
+                      Gravity.CENTER
+                  ))
+
+                  val mc = MediaController(this)
+                  mc.setAnchorView(vv)
+                  vv.setMediaController(mc)
+
+                  vv.setOnErrorListener { _, _, _ ->
+                      Toast.makeText(this, "این فایل پخش نشد", Toast.LENGTH_LONG).show()
+                      true
+                  }
+                  vv.setOnPreparedListener { mp ->
+                      mp.start()
+                      vv.post { mc.show(4000) }
+                  }
+                  vv.setVideoURI(Uri.parse(s))
+                  setContentView(frame)
+              }
+
+              override fun onPause() {
+                  super.onPause()
+                  if (::vv.isInitialized) {
+                      pos = vv.currentPosition
+                      vv.pause()
+                  }
+              }
+
+              override fun onResume() {
+                  super.onResume()
+                  if (::vv.isInitialized && pos > 0) vv.seekTo(pos)
+              }
+          }
+          EOF
+
+      - name: Build debug APK
+        run: gradle assembleDebug --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ShareDL-apk
+          path: app/build/outputs/apk/debug/*.apk
