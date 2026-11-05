@@ -309,9 +309,10 @@ jobs:
                       try {
                           download(url, mode)
                       } catch (t: Throwable) {
-                          val m = (t.message ?: t.toString()).take(400)
+                          val full = (t.message ?: t.toString()).trim()
+                          val m = full.take(400)
                           Bus.post("❌ خطا: $m")
-                          notify(2, buildNotif("❌ دانلود ناموفق بود: " + m.take(90), -1, false))
+                          notify(2, buildNotif("❌ دانلود ناموفق بود: " + full.lines().last().take(100), -1, false))
                       } finally {
                           if (pending.decrementAndGet() == 0) {
                               stopForeground(true)
@@ -322,7 +323,7 @@ jobs:
                   return START_NOT_STICKY
               }
 
-              private fun buildRequest(url: String, mode: String, dir: File, client: String?): YoutubeDLRequest {
+              private fun buildRequest(url: String, mode: String, dir: File, client: String?, level: Int = 0): YoutubeDLRequest {
                   val req = YoutubeDLRequest(url)
                   req.addOption("--no-playlist")
                   req.addOption("--no-mtime")
@@ -340,11 +341,16 @@ jobs:
                       req.addOption("--audio-quality", "0")
                   } else {
                       // "res" = the SMALLEST side of the video, so 720p means the same for vertical and horizontal videos.
-                      req.addOption("-f", "bv*+ba/b")
-                      if (mode == "best") {
-                          req.addOption("-S", "res,ext")
+                      // level 0: separate video+audio (merged), level 1: single progressive file, level 2: anything.
+                      if (level >= 2) {
+                          req.addOption("-f", "b*")
                       } else {
-                          req.addOption("-S", "res:" + mode + ",ext")
+                          req.addOption("-f", if (level == 0) "bv*+ba/b" else "b/bv*+ba")
+                          if (mode == "best") {
+                              req.addOption("-S", "res,ext")
+                          } else {
+                              req.addOption("-S", "res:" + mode + ",ext")
+                          }
                       }
                       req.addOption("--merge-output-format", "mp4")
                   }
@@ -377,10 +383,15 @@ jobs:
                   val isYoutube = Regex("(youtube\\.com|youtu\\.be|youtube-nocookie\\.com)", RegexOption.IGNORE_CASE).containsMatchIn(url)
                   val isThreads = Regex("threads\\.(net|com)", RegexOption.IGNORE_CASE).containsMatchIn(url)
                   val isInsta = Regex("instagram\\.com", RegexOption.IGNORE_CASE).containsMatchIn(url)
-                  val clients: List<Pair<String, String?>> = when {
-                      isYoutube -> listOf<String?>(null, "android_vr", "tv,web_safari", "mweb", "ios").map { Pair<String, String?>(url, it) }
-                      isThreads -> threadsUrls(url).map { Pair<String, String?>(it, null) }
-                      else -> listOf(Pair<String, String?>(url, null))
+                  val clients: List<Triple<String, String?, Int>> = when {
+                      isYoutube -> listOf<String?>(null, "android_vr", "tv,web_safari", "mweb", "ios")
+                          .map { Triple<String, String?, Int>(url, it, 0) } + Triple<String, String?, Int>(url, null, 1)
+                      isThreads -> threadsUrls(url).map { Triple<String, String?, Int>(it, null, 0) }
+                      else -> listOf(
+                          Triple<String, String?, Int>(url, null, 0),
+                          Triple<String, String?, Int>(url, null, 1),
+                          Triple<String, String?, Int>(url, null, 2)
+                      )
                   }
 
                   var lastPct = -1
@@ -398,7 +409,7 @@ jobs:
                   while (!directOk && ci < clients.size) {
                       try {
                           dir.listFiles()?.forEach { it.delete() }
-                          val req = buildRequest(clients[ci].first, mode, dir, clients[ci].second)
+                          val req = buildRequest(clients[ci].first, mode, dir, clients[ci].second, clients[ci].third)
                           YoutubeDL.getInstance().execute(req, "dl_" + System.currentTimeMillis()) { progress, _, _ ->
                               val p = progress.toInt()
                               if (p != lastPct && p in 0..100) {
@@ -415,6 +426,7 @@ jobs:
                           break
                       } catch (t: Throwable) {
                           lastErr = t
+                          Bus.post("⚠️ " + (t.message ?: t.toString()).trim().lines().last().take(160))
                           if (!updated) {
                               updated = true
                               Bus.post("🔄 به‌روزرسانی موتور و تلاش دوباره…")
