@@ -24,6 +24,7 @@ jobs:
         run: |
           mkdir -p app/src/main/java/com/sharedl/app
           mkdir -p app/src/main/res/drawable app/src/main/res/mipmap-anydpi-v26 app/src/main/res/mipmap-anydpi
+          echo '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' | base64 -d > app/shared.p12
 
           cat > settings.gradle <<'EOF'
           pluginManagement {
@@ -71,7 +72,7 @@ jobs:
                   applicationId 'com.sharedl.app'
                   minSdk 24
                   targetSdk 34
-                  versionCode 1
+                  versionCode (project.findProperty('vCode') ?: '1').toString().toInteger()
                   versionName '1.0'
                   ndk {
                       abiFilters 'arm64-v8a', 'armeabi-v7a'
@@ -92,7 +93,20 @@ jobs:
                   }
               }
 
+              signingConfigs {
+                  shared {
+                      storeFile file('shared.p12')
+                      storePassword 'sharedl123'
+                      keyAlias 'sharedl'
+                      keyPassword 'sharedl123'
+                      storeType 'pkcs12'
+                  }
+              }
+
               buildTypes {
+                  debug {
+                      signingConfig signingConfigs.shared
+                  }
                   release {
                       minifyEnabled false
                   }
@@ -217,6 +231,50 @@ jobs:
                   FFmpeg.getInstance().init(app)
                   ready = true
               }
+
+              fun lastUpdate(ctx: Context): Long =
+                  ctx.applicationContext.getSharedPreferences("prefs", Context.MODE_PRIVATE).getLong("lastUpdate", 0L)
+
+              // Updates yt-dlp to the NIGHTLY channel (fixes YouTube/Threads/etc. fastest).
+              // Falls back to the stable channel if nightly is not available.
+              @Synchronized
+              fun update(ctx: Context): String {
+                  ensureInit(ctx)
+                  val app = ctx.applicationContext
+                  val yd = YoutubeDL.getInstance()
+                  var result: String? = null
+                  var nightlyFailure: Throwable? = null
+                  try {
+                      val cls = Class.forName("com.yausername.youtubedl_android.YoutubeDL\$UpdateChannel")
+                      var ch: Any? = null
+                      for (n in listOf("_NIGHTLY", "NIGHTLY")) {
+                          try {
+                              ch = cls.getField(n).get(null)
+                          } catch (e: Throwable) {
+                          }
+                          if (ch != null) break
+                      }
+                      if (ch == null) {
+                          try {
+                              ch = Class.forName("com.yausername.youtubedl_android.YoutubeDL\$UpdateChannel\$NIGHTLY")
+                                  .getField("INSTANCE").get(null)
+                          } catch (e: Throwable) {
+                          }
+                      }
+                      if (ch != null) {
+                          val m = yd.javaClass.getMethod("updateYoutubeDL", Context::class.java, cls)
+                          result = m.invoke(yd, app, ch)?.toString() ?: "nightly"
+                      }
+                  } catch (e: Throwable) {
+                      nightlyFailure = e
+                  }
+                  if (result == null) {
+                      result = yd.updateYoutubeDL(app)?.toString() ?: "stable"
+                  }
+                  app.getSharedPreferences("prefs", Context.MODE_PRIVATE).edit()
+                      .putLong("lastUpdate", System.currentTimeMillis()).apply()
+                  return result
+              }
           }
 
           class DownloadService : Service() {
@@ -256,19 +314,19 @@ jobs:
                   return START_NOT_STICKY
               }
 
-              private fun download(url: String, mode: String) {
-                  Bus.post("⏳ شروع: $url")
-                  Engine.ensureInit(this)
-
-                  val dir = File(cacheDir, "dl_" + System.currentTimeMillis())
-                  dir.mkdirs()
-
+              private fun buildRequest(url: String, mode: String, dir: File, client: String?): YoutubeDLRequest {
                   val req = YoutubeDLRequest(url)
                   req.addOption("--no-playlist")
                   req.addOption("--no-mtime")
+                  req.addOption("--retries", "5")
+                  req.addOption("--fragment-retries", "5")
                   req.addOption("-o", dir.absolutePath + "/%(title).80s [%(id)s].%(ext)s")
+                  if (client != null) {
+                      req.addOption("--extractor-args", "youtube:player_client=" + client)
+                  }
 
                   if (mode == "audio") {
+                      req.addOption("-f", "ba/b")
                       req.addOption("-x")
                       req.addOption("--audio-format", "mp3")
                       req.addOption("--audio-quality", "0")
@@ -281,14 +339,69 @@ jobs:
                       req.addOption("-f", f)
                       req.addOption("--merge-output-format", "mp4")
                   }
+                  return req
+              }
+
+              private fun download(url: String, mode: String) {
+                  Bus.post("⏳ شروع: $url")
+                  Engine.ensureInit(this)
+
+                  val dir = File(cacheDir, "dl_" + System.currentTimeMillis())
+                  dir.mkdirs()
+
+                  var updated = false
+                  if (System.currentTimeMillis() - Engine.lastUpdate(this) > 12L * 3600L * 1000L) {
+                      updated = true
+                      try {
+                          Bus.post("🔄 به‌روزرسانی موتور دانلود…")
+                          Engine.update(this)
+                      } catch (e: Throwable) {
+                          Bus.post("⚠️ آپدیت موتور ممکن نشد، ادامه می‌دهیم…")
+                      }
+                  }
+
+                  val isYoutube = Regex("(youtube\\.com|youtu\\.be|youtube-nocookie\\.com)", RegexOption.IGNORE_CASE).containsMatchIn(url)
+                  val clients: List<String?> =
+                      if (isYoutube) listOf(null, "android_vr", "tv,web_safari", "mweb", "ios") else listOf(null)
 
                   var lastPct = -1
-                  YoutubeDL.getInstance().execute(req, "dl_" + System.currentTimeMillis()) { progress, _, _ ->
-                      val p = progress.toInt()
-                      if (p != lastPct && p in 0..100) {
-                          lastPct = p
-                          notify(1, buildNotif("در حال دانلود… $p%", p, true))
+                  var lastErr: Throwable? = null
+                  var ci = 0
+                  while (ci < clients.size) {
+                      try {
+                          dir.listFiles()?.forEach { it.delete() }
+                          val req = buildRequest(url, mode, dir, clients[ci])
+                          YoutubeDL.getInstance().execute(req, "dl_" + System.currentTimeMillis()) { progress, _, _ ->
+                              val p = progress.toInt()
+                              if (p != lastPct && p in 0..100) {
+                                  lastPct = p
+                                  notify(1, buildNotif("در حال دانلود… $p%", p, true))
+                              }
+                          }
+                          val ok = dir.listFiles()?.any {
+                              it.isFile && it.extension.lowercase() !in setOf("part", "ytdl", "temp")
+                          } ?: false
+                          if (!ok) throw RuntimeException("فایلی دانلود نشد")
+                          lastErr = null
+                          break
+                      } catch (t: Throwable) {
+                          lastErr = t
+                          if (!updated) {
+                              updated = true
+                              Bus.post("🔄 به‌روزرسانی موتور و تلاش دوباره…")
+                              try {
+                                  Engine.update(this)
+                              } catch (e: Throwable) {
+                              }
+                          } else {
+                              ci++
+                              if (ci < clients.size) Bus.post("↻ تلاش دوباره با روش دیگر (" + ci + ")…")
+                          }
                       }
+                  }
+                  if (lastErr != null) {
+                      dir.deleteRecursively()
+                      throw lastErr
                   }
 
                   val files = dir.listFiles()?.filter {
@@ -603,10 +716,7 @@ jobs:
                   Thread {
                       try {
                           Bus.post("⏳ در حال آپدیت موتور دانلود…")
-                          Engine.ensureInit(applicationContext)
-                          val s = YoutubeDL.getInstance().updateYoutubeDL(applicationContext)
-                          getSharedPreferences("prefs", MODE_PRIVATE).edit()
-                              .putLong("lastUpdate", System.currentTimeMillis()).apply()
+                          val s = Engine.update(applicationContext)
                           Bus.post("✅ آپدیت موتور انجام شد ($s)")
                       } catch (t: Throwable) {
                           Bus.post("❌ آپدیت ناموفق: " + (t.message ?: t.toString()).take(300))
@@ -1744,7 +1854,7 @@ jobs:
           EOF
 
       - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+        run: gradle assembleDebug --stacktrace -PvCode=${{ github.run_number }}
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
