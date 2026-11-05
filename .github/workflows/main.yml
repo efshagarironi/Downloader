@@ -1929,6 +1929,7 @@ jobs:
           import android.os.Bundle
           import android.os.Handler
           import android.os.Looper
+          import android.os.SystemClock
           import android.text.TextUtils
           import android.view.Gravity
           import android.view.MotionEvent
@@ -1982,6 +1983,17 @@ jobs:
               }
 
               private val hideHud = Runnable { hud.visibility = View.GONE }
+
+              private lateinit var gSeek: FrameLayout
+              private lateinit var gSeekFill: View
+              private lateinit var volBar: FrameLayout
+              private lateinit var volFill: View
+              private var volLeft = true
+              private var lastTapAt = 0L
+              private var lastSeekAt = 0L
+              private val hideGSeek = Runnable { gSeek.visibility = View.GONE }
+              private val hideVol = Runnable { volBar.visibility = View.GONE }
+              private val tapRun = Runnable { toggleOverlay() }
 
               private val tickRun = object : Runnable {
                   override fun run() {
@@ -2100,7 +2112,41 @@ jobs:
               }
 
               // ---------------- touch gestures ----------------
-              // hold + drag sideways: seek | fast sideways flick: next/previous | drag up/down: volume
+              // hold + drag sideways: live seek (bottom bar only) | fast flick: next/previous
+              // drag up/down: volume (bar on the touched side) | double tap: pause / resume
+              private fun togglePlay() {
+                  if (vv.isPlaying) {
+                      vv.pause()
+                      playBtn.text = "▶"
+                      ui.removeCallbacks(hideRun)
+                      overlay.visibility = View.VISIBLE
+                  } else {
+                      vv.start()
+                      playBtn.text = "❚❚"
+                      showOverlay()
+                  }
+              }
+
+              private fun showGSeek(frac: Float, w: Int) {
+                  ui.removeCallbacks(hideGSeek)
+                  gSeek.visibility = View.VISIBLE
+                  val lp = gSeekFill.layoutParams
+                  lp.width = ((w - dp(32)) * frac.coerceIn(0f, 1f)).toInt()
+                  gSeekFill.layoutParams = lp
+              }
+
+              private fun showVol(frac: Float, left: Boolean) {
+                  val lp = volBar.layoutParams as FrameLayout.LayoutParams
+                  lp.gravity = (if (left) Gravity.LEFT else Gravity.RIGHT) or Gravity.CENTER_VERTICAL
+                  volBar.layoutParams = lp
+                  volBar.visibility = View.VISIBLE
+                  val f = volFill.layoutParams
+                  f.height = (dp(160) * frac.coerceIn(0f, 1f)).toInt()
+                  volFill.layoutParams = f
+                  ui.removeCallbacks(hideVol)
+                  ui.postDelayed(hideVol, 800)
+              }
+
               private fun onGesture(e: MotionEvent, w: Int, h: Int): Boolean {
                   when (e.actionMasked) {
                       MotionEvent.ACTION_DOWN -> {
@@ -2121,21 +2167,30 @@ jobs:
                           if (mode == 0 && (Math.abs(dx) > slop || Math.abs(dy) > slop)) {
                               mode = if (Math.abs(dx) >= Math.abs(dy)) 1 else 2
                               ui.removeCallbacks(hideRun)
+                              ui.removeCallbacks(tapRun)
+                              lastTapAt = 0L
+                              if (mode == 1) {
+                                  overlay.visibility = View.GONE
+                                  hud.visibility = View.GONE
+                              } else {
+                                  volLeft = downX < w / 2f
+                              }
                           }
                           if (mode == 1) {
                               val d = vv.duration
                               val delta = (dx / Math.max(w, 1) * 120000f).toInt()
                               seekTarget = (startPos + delta).coerceIn(0, if (d > 0) d else Int.MAX_VALUE)
-                              val sign = if (delta >= 0) "+" else "-"
-                              showHud(
-                                  (if (delta >= 0) "⏩ " else "⏪ ") + Ui.dur(seekTarget.toLong()) +
-                                      "  (" + sign + Ui.dur(Math.abs(delta).toLong()) + ")"
-                              )
+                              if (d > 0) showGSeek(seekTarget.toFloat() / d, w)
+                              val now = SystemClock.uptimeMillis()
+                              if (now - lastSeekAt > 120) {
+                                  lastSeekAt = now
+                                  vv.seekTo(seekTarget)
+                              }
                           } else if (mode == 2) {
                               val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
                               val v = Math.round(startVol + (-dy / Math.max(h, 1)) * max * 1.3f).coerceIn(0, max)
                               audio.setStreamVolume(AudioManager.STREAM_MUSIC, v, 0)
-                              showHud((if (v == 0) "🔇 " else "🔊 ") + v + " / " + max)
+                              showVol(v.toFloat() / Math.max(max, 1), volLeft)
                           }
                           return true
                       }
@@ -2147,17 +2202,31 @@ jobs:
                           val dx = e.x - downX
                           if (up) {
                               if (mode == 0) {
-                                  toggleOverlay()
+                                  val now = SystemClock.uptimeMillis()
+                                  val dt = ViewConfiguration.getDoubleTapTimeout()
+                                  if (lastTapAt != 0L && now - lastTapAt <= dt) {
+                                      lastTapAt = 0L
+                                      ui.removeCallbacks(tapRun)
+                                      togglePlay()
+                                  } else {
+                                      lastTapAt = now
+                                      ui.postDelayed(tapRun, dt.toLong())
+                                  }
                               } else if (mode == 1) {
                                   if (Math.abs(vx) > dp(1200) && Math.abs(dx) > dp(60)) {
+                                      gSeek.visibility = View.GONE
                                       hud.visibility = View.GONE
                                       if (dx > 0) goNext() else goPrev()
                                   } else {
                                       vv.seekTo(seekTarget)
                                       seek.progress = seekTarget
                                       cur.text = Ui.dur(seekTarget.toLong())
+                                      ui.postDelayed(hideGSeek, 500)
+                                      if (!vv.isPlaying) overlay.visibility = View.VISIBLE
                                   }
                               }
+                          } else if (mode == 1) {
+                              ui.postDelayed(hideGSeek, 500)
                           }
                           tracker?.recycle()
                           tracker = null
@@ -2358,6 +2427,28 @@ jobs:
                           Gravity.CENTER
                       )
                   )
+
+                  // ---- gesture seek bar (bottom) ----
+                  gSeek = FrameLayout(this)
+                  gSeek.background = Ui.rect(this, Color.argb(110, 255, 255, 255), 3)
+                  gSeek.visibility = View.GONE
+                  gSeekFill = View(this)
+                  gSeekFill.background = Ui.rect(this, Ui.GREEN, 3)
+                  gSeek.addView(gSeekFill, FrameLayout.LayoutParams(0, FrameLayout.LayoutParams.MATCH_PARENT))
+                  val gsLp = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(6), Gravity.BOTTOM)
+                  gsLp.setMargins(dp(16), 0, dp(16), dp(28))
+                  root.addView(gSeek, gsLp)
+
+                  // ---- gesture volume bar (left or right) ----
+                  volBar = FrameLayout(this)
+                  volBar.background = Ui.rect(this, Color.argb(110, 255, 255, 255), 4)
+                  volBar.visibility = View.GONE
+                  volFill = View(this)
+                  volFill.background = Ui.rect(this, Ui.GREEN, 4)
+                  volBar.addView(volFill, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, 0, Gravity.BOTTOM))
+                  val vbLp = FrameLayout.LayoutParams(dp(8), dp(160), Gravity.LEFT or Gravity.CENTER_VERTICAL)
+                  vbLp.setMargins(dp(24), 0, dp(24), 0)
+                  root.addView(volBar, vbLp)
 
                   setContentView(root)
                   updateNav()
