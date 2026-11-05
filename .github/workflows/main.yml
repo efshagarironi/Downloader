@@ -1523,6 +1523,9 @@ jobs:
                   val i = Intent(this, PlayerActivity::class.java)
                   i.putExtra("uri", item.uri.toString())
                   i.putExtra("title", clean(item.name))
+                  i.putExtra("uris", items.map { it.uri.toString() }.toTypedArray())
+                  i.putExtra("titles", items.map { clean(it.name) }.toTypedArray())
+                  i.putExtra("index", items.indexOf(item).coerceAtLeast(0))
                   startActivity(i)
               }
 
@@ -1921,15 +1924,20 @@ jobs:
           import android.graphics.Color
           import android.graphics.Typeface
           import android.graphics.drawable.GradientDrawable
+          import android.media.AudioManager
           import android.net.Uri
           import android.os.Bundle
           import android.os.Handler
           import android.os.Looper
           import android.text.TextUtils
           import android.view.Gravity
+          import android.view.MotionEvent
+          import android.view.VelocityTracker
           import android.view.View
+          import android.view.ViewConfiguration
           import android.view.WindowManager
           import android.widget.FrameLayout
+          import android.widget.ImageView
           import android.widget.LinearLayout
           import android.widget.SeekBar
           import android.widget.TextView
@@ -1944,19 +1952,41 @@ jobs:
               private lateinit var cur: TextView
               private lateinit var total: TextView
               private lateinit var playBtn: TextView
+              private lateinit var titleView: TextView
+              private lateinit var hud: TextView
+              private lateinit var prevBtn: ImageView
+              private lateinit var nextBtn: ImageView
+              private lateinit var audio: AudioManager
 
               private val ui = Handler(Looper.getMainLooper())
               private var dragging = false
               private var pos = 0
 
+              // playlist
+              private var uris: List<String> = emptyList()
+              private var titles: List<String> = emptyList()
+              private var index = 0
+
+              // gestures: mode 0 = none, 1 = seek, 2 = volume
+              private var mode = 0
+              private var downX = 0f
+              private var downY = 0f
+              private var startPos = 0
+              private var startVol = 0
+              private var seekTarget = 0
+              private var tracker: VelocityTracker? = null
+              private var slop = 0
+
               private val hideRun = Runnable {
                   if (vv.isPlaying) overlay.visibility = View.GONE
               }
 
+              private val hideHud = Runnable { hud.visibility = View.GONE }
+
               private val tickRun = object : Runnable {
                   override fun run() {
                       val d = vv.duration
-                      if (!dragging && d > 0) {
+                      if (!dragging && mode != 1 && d > 0) {
                           val p = vv.currentPosition
                           seek.max = d
                           seek.progress = p
@@ -1988,6 +2018,15 @@ jobs:
                   return t
               }
 
+              private fun iconBtn(res: Int): ImageView {
+                  val v = ImageView(this)
+                  v.setImageResource(res)
+                  v.scaleType = ImageView.ScaleType.CENTER_INSIDE
+                  v.setPadding(dp(11), dp(11), dp(11), dp(11))
+                  v.background = Ui.oval(Color.argb(70, 255, 255, 255))
+                  return v
+              }
+
               private fun showOverlay() {
                   overlay.visibility = View.VISIBLE
                   ui.removeCallbacks(hideRun)
@@ -2003,6 +2042,13 @@ jobs:
                   }
               }
 
+              private fun showHud(s: String) {
+                  hud.text = s
+                  hud.visibility = View.VISIBLE
+                  ui.removeCallbacks(hideHud)
+                  ui.postDelayed(hideHud, 800)
+              }
+
               private fun seekBy(delta: Int) {
                   val d = vv.duration
                   val max = if (d > 0) d else Int.MAX_VALUE
@@ -2015,13 +2061,135 @@ jobs:
                   showOverlay()
               }
 
+              // ---------------- playlist ----------------
+              private fun updateNav() {
+                  prevBtn.alpha = if (index > 0) 1f else 0.35f
+                  nextBtn.alpha = if (index < uris.size - 1) 1f else 0.35f
+              }
+
+              private fun loadAt(i: Int) {
+                  if (i < 0 || i >= uris.size) return
+                  index = i
+                  pos = 0
+                  titleView.text = titles.getOrElse(i) { "" }
+                  seek.progress = 0
+                  cur.text = "0:00"
+                  total.text = "0:00"
+                  vv.stopPlayback()
+                  vv.setVideoURI(Uri.parse(uris[i]))
+                  updateNav()
+                  showOverlay()
+              }
+
+              private fun goNext() {
+                  if (index < uris.size - 1) {
+                      showHud("⏭")
+                      loadAt(index + 1)
+                  } else {
+                      showHud("آخرین ویدئو")
+                  }
+              }
+
+              private fun goPrev() {
+                  if (index > 0) {
+                      showHud("⏮")
+                      loadAt(index - 1)
+                  } else {
+                      showHud("اولین ویدئو")
+                  }
+              }
+
+              // ---------------- touch gestures ----------------
+              // hold + drag sideways: seek | fast sideways flick: next/previous | drag up/down: volume
+              private fun onGesture(e: MotionEvent, w: Int, h: Int): Boolean {
+                  when (e.actionMasked) {
+                      MotionEvent.ACTION_DOWN -> {
+                          downX = e.x
+                          downY = e.y
+                          mode = 0
+                          startPos = vv.currentPosition
+                          startVol = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+                          tracker?.recycle()
+                          tracker = VelocityTracker.obtain()
+                          tracker?.addMovement(e)
+                          return true
+                      }
+                      MotionEvent.ACTION_MOVE -> {
+                          tracker?.addMovement(e)
+                          val dx = e.x - downX
+                          val dy = e.y - downY
+                          if (mode == 0 && (Math.abs(dx) > slop || Math.abs(dy) > slop)) {
+                              mode = if (Math.abs(dx) >= Math.abs(dy)) 1 else 2
+                              ui.removeCallbacks(hideRun)
+                          }
+                          if (mode == 1) {
+                              val d = vv.duration
+                              val delta = (dx / Math.max(w, 1) * 120000f).toInt()
+                              seekTarget = (startPos + delta).coerceIn(0, if (d > 0) d else Int.MAX_VALUE)
+                              val sign = if (delta >= 0) "+" else "-"
+                              showHud(
+                                  (if (delta >= 0) "⏩ " else "⏪ ") + Ui.dur(seekTarget.toLong()) +
+                                      "  (" + sign + Ui.dur(Math.abs(delta).toLong()) + ")"
+                              )
+                          } else if (mode == 2) {
+                              val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                              val v = Math.round(startVol + (-dy / Math.max(h, 1)) * max * 1.3f).coerceIn(0, max)
+                              audio.setStreamVolume(AudioManager.STREAM_MUSIC, v, 0)
+                              showHud((if (v == 0) "🔇 " else "🔊 ") + v + " / " + max)
+                          }
+                          return true
+                      }
+                      MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                          val up = e.actionMasked == MotionEvent.ACTION_UP
+                          tracker?.addMovement(e)
+                          tracker?.computeCurrentVelocity(1000)
+                          val vx = tracker?.xVelocity ?: 0f
+                          val dx = e.x - downX
+                          if (up) {
+                              if (mode == 0) {
+                                  toggleOverlay()
+                              } else if (mode == 1) {
+                                  if (Math.abs(vx) > dp(1200) && Math.abs(dx) > dp(60)) {
+                                      hud.visibility = View.GONE
+                                      if (dx > 0) goNext() else goPrev()
+                                  } else {
+                                      vv.seekTo(seekTarget)
+                                      seek.progress = seekTarget
+                                      cur.text = Ui.dur(seekTarget.toLong())
+                                  }
+                              }
+                          }
+                          tracker?.recycle()
+                          tracker = null
+                          mode = 0
+                          return true
+                      }
+                  }
+                  return true
+              }
+
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
                   window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                  if (savedInstanceState != null) pos = savedInstanceState.getInt("pos", 0)
+                  volumeControlStream = AudioManager.STREAM_MUSIC
+                  audio = getSystemService(AUDIO_SERVICE) as AudioManager
+                  slop = ViewConfiguration.get(this).scaledTouchSlop
 
-                  val uri = Uri.parse(intent.getStringExtra("uri") ?: "")
-                  val titleText = intent.getStringExtra("title") ?: ""
+                  val listU = intent.getStringArrayExtra("uris")
+                  val listT = intent.getStringArrayExtra("titles")
+                  if (listU != null && listU.isNotEmpty()) {
+                      uris = listU.toList()
+                      titles = listT?.toList() ?: emptyList()
+                      index = intent.getIntExtra("index", 0).coerceIn(0, uris.size - 1)
+                  } else {
+                      uris = listOf(intent.getStringExtra("uri") ?: "")
+                      titles = listOf(intent.getStringExtra("title") ?: "")
+                      index = 0
+                  }
+                  if (savedInstanceState != null) {
+                      pos = savedInstanceState.getInt("pos", 0)
+                      index = savedInstanceState.getInt("index", index).coerceIn(0, uris.size - 1)
+                  }
 
                   val root = FrameLayout(this)
                   root.setBackgroundColor(Color.BLACK)
@@ -2036,8 +2204,7 @@ jobs:
                           Gravity.CENTER
                       )
                   )
-                  vv.setOnClickListener { toggleOverlay() }
-                  root.setOnClickListener { toggleOverlay() }
+                  root.setOnTouchListener { v, e -> onGesture(e, v.width, v.height) }
 
                   overlay = FrameLayout(this)
                   root.addView(
@@ -2054,7 +2221,6 @@ jobs:
                   top.gravity = Gravity.CENTER_VERTICAL
                   top.setPadding(dp(10), dp(12), dp(10), dp(28))
                   top.background = shade(true)
-                  top.isClickable = true
 
                   val rot = circle("🔄", Color.argb(70, 255, 255, 255), 16f)
                   rot.setOnClickListener {
@@ -2067,8 +2233,8 @@ jobs:
                   }
                   top.addView(rot, LinearLayout.LayoutParams(dp(44), dp(44)))
 
-                  val titleView = TextView(this)
-                  titleView.text = titleText
+                  titleView = TextView(this)
+                  titleView.text = titles.getOrElse(index) { "" }
                   titleView.setTextColor(Color.WHITE)
                   titleView.textSize = 14f
                   titleView.maxLines = 1
@@ -2091,7 +2257,6 @@ jobs:
                   bottom.orientation = LinearLayout.VERTICAL
                   bottom.setPadding(dp(16), dp(28), dp(16), dp(16))
                   bottom.background = shade(false)
-                  bottom.isClickable = true
 
                   val timeRow = LinearLayout(this)
                   timeRow.orientation = LinearLayout.HORIZONTAL
@@ -2136,6 +2301,10 @@ jobs:
                   ctl.orientation = LinearLayout.HORIZONTAL
                   ctl.gravity = Gravity.CENTER
 
+                  prevBtn = iconBtn(R.drawable.ic_prev)
+                  prevBtn.setOnClickListener {
+                      goPrev()
+                  }
                   val back = circle("« 10", Color.argb(70, 255, 255, 255), 13f)
                   back.setOnClickListener { seekBy(-10000) }
                   playBtn = circle("▶", Ui.GREEN_DARK, 20f)
@@ -2146,16 +2315,22 @@ jobs:
                   }
                   val fwd = circle("10 »", Color.argb(70, 255, 255, 255), 13f)
                   fwd.setOnClickListener { seekBy(10000) }
+                  nextBtn = iconBtn(R.drawable.ic_next)
+                  nextBtn.setOnClickListener {
+                      goNext()
+                  }
 
-                  val bp = LinearLayout.LayoutParams(dp(52), dp(52))
-                  bp.marginStart = dp(18)
-                  bp.marginEnd = dp(18)
-                  val pp = LinearLayout.LayoutParams(dp(64), dp(64))
-                  pp.marginStart = dp(18)
-                  pp.marginEnd = dp(18)
-                  ctl.addView(back, bp)
-                  ctl.addView(playBtn, pp)
-                  ctl.addView(fwd, bp)
+                  fun lpOf(size: Int): LinearLayout.LayoutParams {
+                      val p = LinearLayout.LayoutParams(dp(size), dp(size))
+                      p.marginStart = dp(6)
+                      p.marginEnd = dp(6)
+                      return p
+                  }
+                  ctl.addView(prevBtn, lpOf(44))
+                  ctl.addView(back, lpOf(48))
+                  ctl.addView(playBtn, lpOf(60))
+                  ctl.addView(fwd, lpOf(48))
+                  ctl.addView(nextBtn, lpOf(44))
                   bottom.addView(ctl)
 
                   overlay.addView(
@@ -2167,7 +2342,25 @@ jobs:
                       )
                   )
 
+                  // ---- gesture feedback (center) ----
+                  hud = TextView(this)
+                  hud.setTextColor(Color.WHITE)
+                  hud.textSize = 20f
+                  hud.gravity = Gravity.CENTER
+                  hud.setPadding(dp(18), dp(10), dp(18), dp(10))
+                  hud.background = Ui.rect(this, Color.argb(160, 0, 0, 0), 14)
+                  hud.visibility = View.GONE
+                  root.addView(
+                      hud,
+                      FrameLayout.LayoutParams(
+                          FrameLayout.LayoutParams.WRAP_CONTENT,
+                          FrameLayout.LayoutParams.WRAP_CONTENT,
+                          Gravity.CENTER
+                      )
+                  )
+
                   setContentView(root)
+                  updateNav()
 
                   vv.setOnPreparedListener { mp ->
                       mp.isLooping = false
@@ -2184,7 +2377,7 @@ jobs:
                       Toast.makeText(this, "این فایل قابل پخش نیست", Toast.LENGTH_LONG).show()
                       true
                   }
-                  vv.setVideoURI(uri)
+                  vv.setVideoURI(Uri.parse(uris[index]))
               }
 
               override fun onResume() {
@@ -2205,6 +2398,7 @@ jobs:
               override fun onSaveInstanceState(outState: Bundle) {
                   super.onSaveInstanceState(outState)
                   outState.putInt("pos", vv.currentPosition)
+                  outState.putInt("index", index)
               }
 
               override fun onDestroy() {
@@ -2234,6 +2428,32 @@ jobs:
                   }
               }
           }
+          EOF
+
+          cat > app/src/main/res/drawable/ic_next.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp"
+              android:height="24dp"
+              android:viewportWidth="24"
+              android:viewportHeight="24">
+              <path
+                  android:fillColor="#FFFFFF"
+                  android:pathData="M6,18 L14.5,12 L6,6 Z M16,6 L18,6 L18,18 L16,18 Z" />
+          </vector>
+          EOF
+
+          cat > app/src/main/res/drawable/ic_prev.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp"
+              android:height="24dp"
+              android:viewportWidth="24"
+              android:viewportHeight="24">
+              <path
+                  android:fillColor="#FFFFFF"
+                  android:pathData="M6,6 L8,6 L8,18 L6,18 Z M9.5,12 L18,18 L18,6 Z" />
+          </vector>
           EOF
 
           cat > app/src/main/res/drawable/ic_launcher_bg.xml <<'EOF'
