@@ -339,12 +339,13 @@ jobs:
                       req.addOption("--audio-format", "mp3")
                       req.addOption("--audio-quality", "0")
                   } else {
-                      val f = if (mode == "best") {
-                          "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b"
+                      // "res" = the SMALLEST side of the video, so 720p means the same for vertical and horizontal videos.
+                      req.addOption("-f", "bv*+ba/b")
+                      if (mode == "best") {
+                          req.addOption("-S", "res,ext")
                       } else {
-                          "bv*[height<=$mode][ext=mp4]+ba[ext=m4a]/b[height<=$mode][ext=mp4]/bv*[height<=$mode]+ba/b[height<=$mode]/b"
+                          req.addOption("-S", "res:" + mode + ",ext")
                       }
-                      req.addOption("-f", f)
                       req.addOption("--merge-output-format", "mp4")
                   }
                   return req
@@ -375,6 +376,7 @@ jobs:
 
                   val isYoutube = Regex("(youtube\\.com|youtu\\.be|youtube-nocookie\\.com)", RegexOption.IGNORE_CASE).containsMatchIn(url)
                   val isThreads = Regex("threads\\.(net|com)", RegexOption.IGNORE_CASE).containsMatchIn(url)
+                  val isInsta = Regex("instagram\\.com", RegexOption.IGNORE_CASE).containsMatchIn(url)
                   val clients: List<Pair<String, String?>> = when {
                       isYoutube -> listOf<String?>(null, "android_vr", "tv,web_safari", "mweb", "ios").map { Pair<String, String?>(url, it) }
                       isThreads -> threadsUrls(url).map { Pair<String, String?>(it, null) }
@@ -424,6 +426,15 @@ jobs:
                               ci++
                               if (ci < clients.size) Bus.post("↻ تلاش دوباره با روش دیگر (" + ci + ")…")
                           }
+                      }
+                  }
+                  if (lastErr != null && isInsta) {
+                      try {
+                          Bus.post("↻ تلاش با روش مستقیم…")
+                          dir.listFiles()?.forEach { it.delete() }
+                          if (directThreads(url, dir)) lastErr = null
+                          else Bus.post("⚠️ روش مستقیم: " + directLog.take(300))
+                      } catch (e: Throwable) {
                       }
                   }
                   if (lastErr != null) {
@@ -504,8 +515,12 @@ jobs:
                   c.disconnect()
               }
 
-              private fun cleanLink(s: String): String =
-                  s.replace("\\u0026", "&").replace("\\u0025", "%").replace("\\/", "/").replace("&amp;", "&")
+              private fun cleanLink(s: String): String {
+                  var x = s
+                  while (x.contains("\\\\")) x = x.replace("\\\\", "\\")
+                  return x.replace("\\u0026", "&").replace("\\u0025", "%").replace("\\/", "/")
+                      .replace("&amp;", "&").trimEnd('\\')
+              }
 
               // Returns candidate video links, most trustworthy first (og:video of THIS post, then
               // video_versions nearest to this post's code, then generic fallbacks). Audio-ish links are dropped.
@@ -528,7 +543,7 @@ jobs:
                   val rest = listOf(
                       Regex("<video[^>]+src=[\"']([^\"']+)[\"']", RegexOption.IGNORE_CASE),
                       Regex("\"video_url\"\\s*:\\s*\"([^\"]+)\""),
-                      Regex("(https?:(?:\\\\/|/){2}[^\"'\\s<>]+?\\.mp4[^\"'\\s<>]*)")
+                      Regex("(https?:(?:\\\\+/|/){2}[^\"'\\s<>]+?\\.mp4[^\"'\\s<>]*)")
                   )
                   for (p in rest) {
                       for (m in p.findAll(html)) out.add(cleanLink(m.groupValues[1]))
@@ -552,15 +567,30 @@ jobs:
               }
 
               // Reads the video link straight from the Threads page and keeps only a file that really has a picture.
+              private fun directUrls(url: String): List<String> {
+                  if (Regex("instagram\\.com", RegexOption.IGNORE_CASE).containsMatchIn(url)) {
+                      val iid = Regex("/(?:p|reel|reels|tv)/([A-Za-z0-9_-]+)").find(url)?.groupValues?.get(1)
+                      if (iid != null) {
+                          return listOf(
+                              "https://www.instagram.com/p/" + iid + "/embed/captioned/",
+                              "https://www.instagram.com/reel/" + iid + "/embed/",
+                              "https://www.instagram.com/p/" + iid + "/"
+                          )
+                      }
+                      return listOf(url.substringBefore('?'))
+                  }
+                  val b = threadsUrls(url)
+                  return b + b.map { it.trimEnd('/') + "/embed" }
+              }
+
               private fun directThreads(url: String, dir: File): Boolean {
                   val uas = listOf(
                       "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
                       "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
                       "Twitterbot/1.0"
                   )
-                  val id = Regex("/post/([A-Za-z0-9_-]+)").find(url)?.groupValues?.get(1) ?: System.currentTimeMillis().toString()
-                  val base = threadsUrls(url)
-                  val cands = base + base.map { it.trimEnd('/') + "/embed" }
+                  val id = Regex("/(?:post|p|reel|reels|tv)/([A-Za-z0-9_-]+)").find(url)?.groupValues?.get(1) ?: System.currentTimeMillis().toString()
+                  val cands = directUrls(url)
                   directLog = ""
                   for (u in cands) {
                       for (ua in uas) {
