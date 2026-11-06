@@ -2441,6 +2441,7 @@ jobs:
               private val tapRun = Runnable { toggleOverlay() }
               private lateinit var edgeArrow: TextView
               private var lastTapZone = 0
+              private var quietLoad = false
               private var bottomBarView: View? = null
               private val hideArrow = Runnable { edgeArrow.visibility = View.GONE }
 
@@ -2614,23 +2615,25 @@ jobs:
                   vv.stopPlayback()
                   vv.setVideoURI(Uri.parse(uris[i]))
                   updateNav()
-                  showOverlay()
-              }
+                  if (!quietLoad) showOverlay()
+                  }
 
-              private fun goNext() {
-                  if (index < uris.size - 1) {
-                      showHud("⏭")
-                      loadAt(index + 1)
-                  } else {
+              private fun goNext(quiet: Boolean = false) {
+              if (index < uris.size - 1) {
+              if (!quiet) showHud("⏭")
+              quietLoad = quiet
+              loadAt(index + 1)
+              } else {
                       showHud("آخرین ویدئو")
                   }
               }
 
-              private fun goPrev() {
-                  if (index > 0) {
-                      showHud("⏮")
-                      loadAt(index - 1)
-                  } else {
+              private fun goPrev(quiet: Boolean = false) {
+              if (index > 0) {
+              if (!quiet) showHud("⏮")
+              quietLoad = quiet
+              loadAt(index - 1)
+              } else {
                       showHud("اولین ویدئو")
                   }
               }
@@ -2697,17 +2700,17 @@ jobs:
                   ui.postDelayed(hideArrow, 450)
               }
 
+              // Double tap on the centre: only a brief icon in the middle, the controls never appear.
               private fun togglePlay() {
-                  if (vv.isPlaying) {
-                      vv.pause()
-                      playBtn.text = "▶"
-                      ui.removeCallbacks(hideRun)
-                      overlay.visibility = View.VISIBLE
-                  } else {
-                      vv.start()
-                      playBtn.text = "❚❚"
-                      showOverlay()
-                  }
+              if (vv.isPlaying) {
+              vv.pause()
+              playBtn.text = "▶"
+              showHud("⏸")
+              } else {
+              vv.start()
+              playBtn.text = "❚❚"
+              showHud("▶")
+              }
               }
 
               private fun showGSeek(frac: Float, w: Int) {
@@ -2791,12 +2794,12 @@ jobs:
                                       ui.removeCallbacks(tapRun)
                                       when (zone) {
                                           1 -> {
-                                              showEdgeArrow(true)
-                                              goNext()
+                                          showEdgeArrow(true)
+                                          goNext(true)
                                           }
                                           -1 -> {
-                                              showEdgeArrow(false)
-                                              goPrev()
+                                          showEdgeArrow(false)
+                                          goPrev(true)
                                           }
                                           else -> togglePlay()
                                       }
@@ -3072,9 +3075,10 @@ jobs:
                       mp.isLooping = false
                       if (pos > 0) vv.seekTo(pos)
                       vv.start()
-                      showOverlay()
-                  }
-                  vv.setOnCompletionListener {
+                      if (!quietLoad) showOverlay()
+                      quietLoad = false
+                      }
+                      vv.setOnCompletionListener {
                       playBtn.text = "▶"
                       ui.removeCallbacks(hideRun)
                       overlay.visibility = View.VISIBLE
