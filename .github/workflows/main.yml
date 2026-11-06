@@ -2722,7 +2722,7 @@ jobs:
               }
 
               private fun topLp(): LinearLayout.LayoutParams {
-                  val p = LinearLayout.LayoutParams(dp(44), dp(44))
+                  val p = LinearLayout.LayoutParams(dp(50), dp(50))
                   p.marginStart = dp(3)
                   p.marginEnd = dp(3)
                   p.gravity = Gravity.CENTER_VERTICAL
@@ -2733,8 +2733,7 @@ jobs:
                   val v = ImageView(this)
                   v.setImageResource(res)
                   v.scaleType = ImageView.ScaleType.CENTER_INSIDE
-                  v.setPadding(dp(11), dp(11), dp(11), dp(11))
-                  v.background = Ui.oval(Color.argb(70, 255, 255, 255))
+                  v.setPadding(dp(8), dp(8), dp(8), dp(8))
                   return v
               }
 
@@ -3204,7 +3203,7 @@ jobs:
                   val top = LinearLayout(this)
                   top.orientation = LinearLayout.HORIZONTAL
                   top.gravity = Gravity.CENTER_VERTICAL
-                  top.setPadding(dp(10), dp(12), dp(10), dp(28))
+                  top.setPadding(dp(10), dp(4), dp(10), dp(28))
                   top.background = shade(true)
 
                   val rot = RepeatIconView(this)
@@ -3315,16 +3314,12 @@ jobs:
                   prevBtn.setOnClickListener {
                       goPrev()
                   }
-                  val back = circle("« 10", Color.argb(70, 255, 255, 255), 13f)
-                  back.setOnClickListener { seekBy(-10000) }
-                  playBtn = circle("▶", Ui.GREEN_DARK, 20f)
+                  playBtn = plainIcon("▶", 32f)
                   playBtn.setOnClickListener {
                       if (vv.isPlaying) vv.pause() else vv.start()
                       playBtn.text = if (vv.isPlaying) "❚❚" else "▶"
                       showOverlay()
                   }
-                  val fwd = circle("10 »", Color.argb(70, 255, 255, 255), 13f)
-                  fwd.setOnClickListener { seekBy(10000) }
                   nextBtn = iconBtn(R.drawable.ic_next)
                   nextBtn.setOnClickListener {
                       goNext()
@@ -3336,11 +3331,9 @@ jobs:
                       p.marginEnd = dp(6)
                       return p
                   }
-                  ctl.addView(prevBtn, lpOf(44))
-                  ctl.addView(back, lpOf(48))
-                  ctl.addView(playBtn, lpOf(60))
-                  ctl.addView(fwd, lpOf(48))
-                  ctl.addView(nextBtn, lpOf(44))
+                  ctl.addView(prevBtn, lpOf(48))
+                  ctl.addView(playBtn, lpOf(64))
+                  ctl.addView(nextBtn, lpOf(48))
                   bottom.addView(ctl)
 
                   overlay.addView(
@@ -3407,6 +3400,19 @@ jobs:
                   centerIcon.visibility = View.GONE
                   root.addView(centerIcon, FrameLayout.LayoutParams(dp(84), dp(84), Gravity.CENTER))
 
+                  if (Build.VERSION.SDK_INT >= 28) {
+                      window.attributes = window.attributes.also {
+                          it.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                      }
+                  }
+                  root.setOnApplyWindowInsetsListener { _, ins ->
+                      var ct = 0
+                      if (Build.VERSION.SDK_INT >= 28) {
+                          ct = ins.displayCutout?.safeInsetTop ?: 0
+                      }
+                      top.setPadding(dp(10), ct + dp(4), dp(10), dp(28))
+                      ins
+                  }
                   setContentView(root)
                   updateNav()
 
