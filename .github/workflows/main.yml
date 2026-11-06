@@ -139,6 +139,8 @@ jobs:
                   android:maxSdkVersion="32" />
               <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
               <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+              <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+              <uses-permission android:name="android.permission.USE_FINGERPRINT" />
 
               <queries>
                   <package android:name="app.revanced.android.apps.youtube.music" />
@@ -179,6 +181,7 @@ jobs:
 
 
               <application
+                  android:name=".App"
                   android:label="Downloader"
                   android:icon="@mipmap/ic_launcher"
                   android:supportsRtl="true"
@@ -232,6 +235,14 @@ jobs:
 
                   <activity
                       android:name=".ProgressBarSettingsActivity"
+                      android:exported="false" />
+
+                  <activity
+                      android:name=".SecurityActivity"
+                      android:exported="false" />
+
+                  <activity
+                      android:name=".LockActivity"
                       android:exported="false" />
 
                   <activity
@@ -3235,7 +3246,7 @@ jobs:
                   scroll.addView(body)
                   root.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
-                  fun menuItem(title: String, subText: String, cls: Class<*>, top: Int): TextView {
+                  fun menuItem(title: String, subText: String, cls: Class<*>, top: Int, icon: String = "🎚"): TextView {
                       val item = LinearLayout(this)
                       item.orientation = LinearLayout.HORIZONTAL
                       item.gravity = Gravity.CENTER_VERTICAL
@@ -3248,7 +3259,7 @@ jobs:
                           if (cls == QualitySettingsActivity::class.java) startActivity(Intent(this, cls)) else Nav.open(this, cls)
                       }
 
-                      val ic = tv("🎚", 22f, Color.WHITE)
+                      val ic = tv(icon, 22f, Color.WHITE)
                       ic.gravity = Gravity.CENTER
                       ic.background = Ui.oval(Color.argb(45, 34, 197, 94))
                       item.addView(ic, LinearLayout.LayoutParams(dp(48), dp(48)))
@@ -3274,6 +3285,7 @@ jobs:
                   menuItem("نوار پایین", "اندازه و جای جداگانه آیکون‌های پخش، قبلی، بعدی، تغییر اندازه تصویر و لیست تکرار و فاصله بین آنها", BottomBarSettingsActivity::class.java, 14)
                   qualitySub = menuItem("کیفیت دلخواه", "", QualitySettingsActivity::class.java, 14)
                   qualitySub.text = AskPrefs.summary(this)
+                  menuItem("امنیت", "قفل ورود به برنامه با رمز یا الگو، و باز کردن با اثر انگشت یا تشخیص چهره", SecurityActivity::class.java, 14, "🔒")
 
                   igBtn = tv("", 13f, Ui.MUTED, true)
                   igBtn.gravity = Gravity.CENTER
@@ -5028,6 +5040,801 @@ jobs:
                               or View.SYSTEM_UI_FLAG_FULLSCREEN
                               or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
                   }
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/sharedl/app/App.kt <<'EOF'
+          package com.sharedl.app
+
+          import android.app.Activity
+          import android.app.Application
+          import android.content.Context
+          import android.content.Intent
+          import android.os.Bundle
+          import android.os.SystemClock
+          import android.util.Base64
+          import java.security.SecureRandom
+          import javax.crypto.SecretKeyFactory
+          import javax.crypto.spec.PBEKeySpec
+
+          // ---------------------------------------------------------------------------
+          // App lock state + saved credential (hashed with a random salt, never stored in clear)
+          // ---------------------------------------------------------------------------
+          object AppLock {
+              @Volatile var unlocked = false
+              @Volatile var showing = false
+              var started = 0
+              var leftAt = 0L
+              const val GRACE = 3000L
+
+              private fun sp(c: Context) = c.getSharedPreferences("lock", Context.MODE_PRIVATE)
+
+              fun type(c: Context): String = sp(c).getString("type", "") ?: ""
+              fun enabled(c: Context): Boolean = type(c).isNotEmpty()
+              fun fp(c: Context): Boolean = sp(c).getBoolean("fp", false)
+              fun face(c: Context): Boolean = sp(c).getBoolean("face", false)
+
+              fun setFp(c: Context, v: Boolean) {
+                  sp(c).edit().putBoolean("fp", v).apply()
+              }
+
+              fun setFace(c: Context, v: Boolean) {
+                  sp(c).edit().putBoolean("face", v).apply()
+              }
+
+              private fun hash(secret: String, salt: ByteArray): String {
+                  val f = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA1")
+                  val k = f.generateSecret(PBEKeySpec(secret.toCharArray(), salt, 8000, 160))
+                  return Base64.encodeToString(k.encoded, Base64.NO_WRAP)
+              }
+
+              fun save(c: Context, type: String, secret: String) {
+                  val salt = ByteArray(16)
+                  SecureRandom().nextBytes(salt)
+                  sp(c).edit()
+                      .putString("type", type)
+                      .putString("salt", Base64.encodeToString(salt, Base64.NO_WRAP))
+                      .putString("hash", hash(secret, salt))
+                      .apply()
+                  unlocked = true
+              }
+
+              fun check(c: Context, secret: String): Boolean {
+                  val s = sp(c).getString("salt", null) ?: return false
+                  val h = sp(c).getString("hash", null) ?: return false
+                  return try {
+                      hash(secret, Base64.decode(s, Base64.NO_WRAP)) == h
+                  } catch (e: Throwable) {
+                      false
+                  }
+              }
+
+              fun clear(c: Context) {
+                  sp(c).edit().clear().apply()
+              }
+
+              // Called whenever an activity is resumed: shows the lock screen when the app is locked.
+              // A link shared into the app (ACTION_SEND) is NOT blocked, so downloads never need unlocking.
+              fun gate(a: Activity) {
+                  if (a is LockActivity) return
+                  if (!enabled(a) || unlocked || showing) return
+                  if (a is MainActivity && a.intent?.action == Intent.ACTION_SEND) return
+                  showing = true
+                  a.startActivity(Intent(a, LockActivity::class.java))
+              }
+          }
+
+          class App : Application() {
+              override fun onCreate() {
+                  super.onCreate()
+                  registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+                      override fun onActivityCreated(a: Activity, b: Bundle?) {}
+
+                      override fun onActivityStarted(a: Activity) {
+                          if (AppLock.started == 0 && AppLock.leftAt > 0L &&
+                              SystemClock.elapsedRealtime() - AppLock.leftAt > AppLock.GRACE
+                          ) {
+                              AppLock.unlocked = false
+                          }
+                          AppLock.leftAt = 0L
+                          AppLock.started++
+                      }
+
+                      override fun onActivityResumed(a: Activity) {
+                          AppLock.gate(a)
+                      }
+
+                      override fun onActivityPaused(a: Activity) {}
+
+                      override fun onActivityStopped(a: Activity) {
+                          AppLock.started--
+                          if (AppLock.started <= 0) {
+                              AppLock.started = 0
+                              if (!a.isChangingConfigurations) AppLock.leftAt = SystemClock.elapsedRealtime()
+                          }
+                      }
+
+                      override fun onActivitySaveInstanceState(a: Activity, b: Bundle) {}
+
+                      override fun onActivityDestroyed(a: Activity) {}
+                  })
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/sharedl/app/LockActivity.kt <<'EOF'
+          package com.sharedl.app
+
+          import android.app.Activity
+          import android.content.Context
+          import android.content.DialogInterface
+          import android.graphics.Canvas
+          import android.graphics.Color
+          import android.graphics.Paint
+          import android.graphics.Typeface
+          import android.os.Build
+          import android.os.Bundle
+          import android.os.CancellationSignal
+          import android.os.Handler
+          import android.os.Looper
+          import android.os.SystemClock
+          import android.view.Gravity
+          import android.view.HapticFeedbackConstants
+          import android.view.MotionEvent
+          import android.view.View
+          import android.widget.LinearLayout
+          import android.widget.TextView
+
+          // ---------------------------------------------------------------------------
+          // 3x3 pattern pad
+          // ---------------------------------------------------------------------------
+          class PatternView(ctx: Context) : View(ctx) {
+              var onDone: ((List<Int>) -> Unit)? = null
+              var inputEnabled = true
+              var error = false
+                  set(v) {
+                      field = v
+                      invalidate()
+                  }
+              private val sel = ArrayList<Int>()
+              private var fx = 0f
+              private var fy = 0f
+              private var drawing = false
+
+              private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                  style = Paint.Style.STROKE
+                  strokeWidth = Ui.dp(ctx, 4).toFloat()
+                  strokeCap = Paint.Cap.ROUND
+              }
+              private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+              private val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+
+              private fun cx(i: Int) = width / 6f + (i % 3) * width / 3f
+              private fun cy(i: Int) = height / 6f + (i / 3) * height / 3f
+
+              override fun onDraw(c: Canvas) {
+                  val col = if (error) Ui.DANGER else Ui.GREEN
+                  line.color = col
+                  for (k in 1 until sel.size) c.drawLine(cx(sel[k - 1]), cy(sel[k - 1]), cx(sel[k]), cy(sel[k]), line)
+                  if (drawing && sel.isNotEmpty()) c.drawLine(cx(sel.last()), cy(sel.last()), fx, fy, line)
+                  for (i in 0..8) {
+                      if (i in sel) {
+                          ring.color = Color.argb(60, Color.red(col), Color.green(col), Color.blue(col))
+                          c.drawCircle(cx(i), cy(i), width / 11f, ring)
+                          dot.color = col
+                          c.drawCircle(cx(i), cy(i), width / 26f, dot)
+                      } else {
+                          dot.color = Ui.MUTED
+                          c.drawCircle(cx(i), cy(i), width / 30f, dot)
+                      }
+                  }
+              }
+
+              private fun hit(x: Float, y: Float) {
+                  val r = width / 8f
+                  for (i in 0..8) {
+                      if (i in sel) continue
+                      val dx = x - cx(i)
+                      val dy = y - cy(i)
+                      if (dx * dx + dy * dy < r * r) {
+                          sel.add(i)
+                          performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                          break
+                      }
+                  }
+              }
+
+              fun reset() {
+                  sel.clear()
+                  error = false
+                  invalidate()
+              }
+
+              override fun onTouchEvent(e: MotionEvent): Boolean {
+                  if (!inputEnabled) return true
+                  when (e.action) {
+                      MotionEvent.ACTION_DOWN -> {
+                          parent?.requestDisallowInterceptTouchEvent(true)
+                          reset()
+                          drawing = true
+                          fx = e.x
+                          fy = e.y
+                          hit(e.x, e.y)
+                          invalidate()
+                      }
+                      MotionEvent.ACTION_MOVE -> {
+                          fx = e.x
+                          fy = e.y
+                          hit(e.x, e.y)
+                          invalidate()
+                      }
+                      MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                          drawing = false
+                          invalidate()
+                          if (sel.isNotEmpty()) onDone?.invoke(ArrayList(sel))
+                      }
+                  }
+                  return true
+              }
+          }
+
+          // ---------------------------------------------------------------------------
+          // Lock screen: unlock the app, or (mode = "set") choose a new PIN / pattern
+          // ---------------------------------------------------------------------------
+          class LockActivity : Activity() {
+
+              private var mode = "unlock"
+              private var type = "pin"
+              private var first: String? = null
+              private var fails = 0
+              private var blockedUntil = 0L
+              private val pin = StringBuilder()
+              private lateinit var msg: TextView
+              private var dots: TextView? = null
+              private var pattern: PatternView? = null
+              private lateinit var bioBtn: TextView
+              private var cancel: CancellationSignal? = null
+              private var bioActive = false
+              private val ui = Handler(Looper.getMainLooper())
+
+              private fun dp(x: Int) = Ui.dp(this, x)
+
+              private fun tv(s: String, size: Float, color: Int, bold: Boolean = false): TextView {
+                  val t = TextView(this)
+                  t.text = s
+                  t.textSize = size
+                  t.setTextColor(color)
+                  if (bold) t.setTypeface(t.typeface, Typeface.BOLD)
+                  return t
+              }
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  window.statusBarColor = Ui.BG_TOP
+                  window.navigationBarColor = Ui.BG_BOTTOM
+                  mode = intent.getStringExtra("mode") ?: "unlock"
+                  type = if (mode == "set") (intent.getStringExtra("type") ?: "pin") else AppLock.type(this).ifEmpty { "pin" }
+
+                  val root = LinearLayout(this)
+                  root.orientation = LinearLayout.VERTICAL
+                  root.gravity = Gravity.CENTER_HORIZONTAL
+                  root.background = Ui.pageBg()
+                  root.setPadding(dp(24), dp(40), dp(24), dp(24))
+                  root.layoutDirection = View.LAYOUT_DIRECTION_RTL
+
+                  val ic = tv("🔒", 40f, Color.WHITE)
+                  ic.gravity = Gravity.CENTER
+                  root.addView(ic)
+
+                  val title = tv(
+                      if (mode == "set") (if (type == "pin") "تنظیم رمز عددی" else "تنظیم الگو") else "قفل برنامه",
+                      22f, Ui.TEXT, true
+                  )
+                  title.gravity = Gravity.CENTER
+                  val tp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                  tp.topMargin = dp(10)
+                  root.addView(title, tp)
+
+                  msg = tv("", 14f, Ui.MUTED)
+                  msg.gravity = Gravity.CENTER
+                  msg.minLines = 2
+                  val mp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                  mp.topMargin = dp(8)
+                  root.addView(msg, mp)
+
+                  if (type == "pin") buildPin(root) else buildPattern(root)
+
+                  bioBtn = tv("🔐 باز کردن با اثر انگشت / چهره", 14f, Ui.GREEN, true)
+                  bioBtn.gravity = Gravity.CENTER
+                  bioBtn.setPadding(dp(16), dp(12), dp(16), dp(12))
+                  bioBtn.setOnClickListener { startBio() }
+                  bioBtn.visibility = if (mode == "unlock" && (AppLock.fp(this) || AppLock.face(this))) View.VISIBLE else View.GONE
+                  val bp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                  bp.topMargin = dp(18)
+                  root.addView(bioBtn, bp)
+
+                  setContentView(root)
+                  showPrompt()
+              }
+
+              private fun showPrompt() {
+                  msg.setTextColor(Ui.MUTED)
+                  msg.text = if (mode == "unlock") {
+                      if (type == "pin") "رمز را وارد کن" else "الگو را بکش"
+                  } else if (first == null) {
+                      if (type == "pin") "رمز جدید را وارد کن (حداقل ۴ رقم) و ✓ بزن" else "الگوی جدید را بکش (حداقل ۴ نقطه)"
+                  } else {
+                      if (type == "pin") "برای تأیید، رمز را دوباره وارد کن" else "برای تأیید، الگو را دوباره بکش"
+                  }
+              }
+
+              private fun warn(s: String) {
+                  msg.text = s
+                  msg.setTextColor(Ui.DANGER)
+              }
+
+              private fun buildPin(root: LinearLayout) {
+                  val d = tv("", 26f, Ui.GREEN, true)
+                  d.gravity = Gravity.CENTER
+                  d.minHeight = dp(44)
+                  dots = d
+                  val dp0 = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                  dp0.topMargin = dp(10)
+                  root.addView(d, dp0)
+
+                  val pad = LinearLayout(this)
+                  pad.orientation = LinearLayout.VERTICAL
+                  pad.gravity = Gravity.CENTER
+                  pad.layoutDirection = View.LAYOUT_DIRECTION_LTR
+                  val keys = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "⌫", "0", "✓")
+                  for (r in 0 until 4) {
+                      val row = LinearLayout(this)
+                      row.orientation = LinearLayout.HORIZONTAL
+                      row.gravity = Gravity.CENTER
+                      for (c in 0 until 3) {
+                          val k = keys[r * 3 + c]
+                          val b = tv(k, 24f, if (k == "✓") Ui.GREEN else Ui.TEXT, true)
+                          b.gravity = Gravity.CENTER
+                          b.background = Ui.rect(this, Ui.CARD, 36, Ui.CARD_STROKE, 1)
+                          b.setOnClickListener {
+                              b.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                              onKey(k)
+                          }
+                          val lp = LinearLayout.LayoutParams(dp(72), dp(72))
+                          lp.setMargins(dp(8), dp(6), dp(8), dp(6))
+                          row.addView(b, lp)
+                      }
+                      pad.addView(row)
+                  }
+                  val pp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                  pp.topMargin = dp(10)
+                  root.addView(pad, pp)
+              }
+
+              private fun buildPattern(root: LinearLayout) {
+                  val p = PatternView(this)
+                  pattern = p
+                  p.onDone = { list -> submit(list.joinToString("")) }
+                  val lp = LinearLayout.LayoutParams(dp(280), dp(280))
+                  lp.topMargin = dp(24)
+                  root.addView(p, lp)
+              }
+
+              private fun onKey(k: String) {
+                  when (k) {
+                      "⌫" -> if (pin.isNotEmpty()) pin.setLength(pin.length - 1)
+                      "✓" -> {
+                          submit(pin.toString())
+                          return
+                      }
+                      else -> if (pin.length < 12) pin.append(k)
+                  }
+                  dots?.text = pin.indices.joinToString(" ") { "●" }
+              }
+
+              private fun resetInput(err: Boolean) {
+                  pin.setLength(0)
+                  dots?.text = ""
+                  val p = pattern
+                  if (p != null) {
+                      p.error = err
+                      p.inputEnabled = false
+                      ui.postDelayed({
+                          p.inputEnabled = true
+                          p.reset()
+                      }, if (err) 700L else 150L)
+                  }
+              }
+
+              private fun submit(secret: String) {
+                  if (mode == "unlock") {
+                      val now = SystemClock.elapsedRealtime()
+                      if (now < blockedUntil) {
+                          warn("چند بار اشتباه وارد شد؛ " + ((blockedUntil - now) / 1000 + 1) + " ثانیه دیگر صبر کن")
+                          resetInput(true)
+                          return
+                      }
+                      if (AppLock.check(this, secret)) {
+                          unlockOk()
+                      } else {
+                          fails++
+                          if (fails >= 5) {
+                              fails = 0
+                              blockedUntil = now + 30000L
+                              warn("۵ بار اشتباه وارد شد؛ ۳۰ ثانیه صبر کن")
+                          } else {
+                              warn(if (type == "pin") "رمز اشتباه است" else "الگو اشتباه است")
+                          }
+                          resetInput(true)
+                      }
+                      return
+                  }
+                  if (secret.length < 4) {
+                      warn(if (type == "pin") "رمز باید حداقل ۴ رقم باشد" else "الگو باید حداقل ۴ نقطه داشته باشد")
+                      resetInput(true)
+                      return
+                  }
+                  val f = first
+                  if (f == null) {
+                      first = secret
+                      showPrompt()
+                      resetInput(false)
+                  } else if (f == secret) {
+                      AppLock.save(this, type, secret)
+                      setResult(RESULT_OK)
+                      finish()
+                  } else {
+                      first = null
+                      warn("با مورد اول یکسان نبود؛ دوباره از اول وارد کن")
+                      resetInput(true)
+                  }
+              }
+
+              private fun unlockOk() {
+                  AppLock.unlocked = true
+                  AppLock.showing = false
+                  finish()
+              }
+
+              // ---------------- biometrics ----------------
+              private fun startBio() {
+                  if (mode != "unlock" || bioActive) return
+                  val fp = AppLock.fp(this)
+                  val face = AppLock.face(this)
+                  if (!fp && !face) return
+                  try {
+                      if (Build.VERSION.SDK_INT >= 28 && face) {
+                          promptSystem()
+                      } else if (fp) {
+                          try {
+                              promptFingerprint()
+                          } catch (t: Throwable) {
+                              bioActive = false
+                              if (Build.VERSION.SDK_INT >= 28) promptSystem()
+                          }
+                      }
+                  } catch (t: Throwable) {
+                      bioActive = false
+                  }
+              }
+
+              @android.annotation.TargetApi(28)
+              private fun promptSystem() {
+                  val cs = CancellationSignal()
+                  cancel = cs
+                  bioActive = true
+                  val b = android.hardware.biometrics.BiometricPrompt.Builder(this)
+                      .setTitle("باز کردن قفل برنامه")
+                      .setNegativeButton("استفاده از رمز یا الگو", mainExecutor, DialogInterface.OnClickListener { _, _ -> bioActive = false })
+                  if (Build.VERSION.SDK_INT >= 30) {
+                      b.setAllowedAuthenticators(android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK)
+                  }
+                  b.build().authenticate(cs, mainExecutor, object : android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
+                      override fun onAuthenticationSucceeded(result: android.hardware.biometrics.BiometricPrompt.AuthenticationResult?) {
+                          bioActive = false
+                          unlockOk()
+                      }
+
+                      override fun onAuthenticationError(errorCode: Int, errString: CharSequence?) {
+                          bioActive = false
+                      }
+
+                      override fun onAuthenticationFailed() {}
+                  })
+              }
+
+              @Suppress("DEPRECATION")
+              private fun promptFingerprint() {
+                  val fm = getSystemService(Context.FINGERPRINT_SERVICE) as? android.hardware.fingerprint.FingerprintManager
+                      ?: throw IllegalStateException("no fingerprint")
+                  if (!fm.isHardwareDetected || !fm.hasEnrolledFingerprints()) {
+                      warn("هیچ اثر انگشتی در گوشی ثبت نشده؛ با رمز یا الگو وارد شو")
+                      return
+                  }
+                  val cs = CancellationSignal()
+                  cancel = cs
+                  bioActive = true
+                  msg.setTextColor(Ui.GREEN)
+                  msg.text = "🔐 اثر انگشتت را روی حسگر بگذار\nیا " + (if (type == "pin") "رمز" else "الگو") + " را وارد کن"
+                  fm.authenticate(null, cs, 0, object : android.hardware.fingerprint.FingerprintManager.AuthenticationCallback() {
+                      override fun onAuthenticationSucceeded(result: android.hardware.fingerprint.FingerprintManager.AuthenticationResult?) {
+                          bioActive = false
+                          unlockOk()
+                      }
+
+                      override fun onAuthenticationError(errMsgId: Int, errString: CharSequence?) {
+                          bioActive = false
+                      }
+
+                      override fun onAuthenticationFailed() {
+                          msg.setTextColor(Ui.DANGER)
+                          msg.text = "اثر انگشت شناخته نشد؛ دوباره امتحان کن"
+                      }
+                  }, null)
+              }
+
+              override fun onResume() {
+                  super.onResume()
+                  if (mode == "unlock") startBio()
+              }
+
+              override fun onStop() {
+                  try {
+                      cancel?.cancel()
+                  } catch (t: Throwable) {
+                  }
+                  cancel = null
+                  bioActive = false
+                  super.onStop()
+              }
+
+              override fun onDestroy() {
+                  ui.removeCallbacksAndMessages(null)
+                  if (mode == "unlock") AppLock.showing = false
+                  super.onDestroy()
+              }
+
+              override fun onBackPressed() {
+                  if (mode == "set") {
+                      setResult(RESULT_CANCELED)
+                      finish()
+                  } else {
+                      moveTaskToBack(true)
+                  }
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/sharedl/app/SecurityActivity.kt <<'EOF'
+          package com.sharedl.app
+
+          import android.app.Activity
+          import android.app.AlertDialog
+          import android.content.Context
+          import android.content.Intent
+          import android.content.pm.PackageManager
+          import android.content.res.ColorStateList
+          import android.graphics.Color
+          import android.graphics.Typeface
+          import android.os.Build
+          import android.os.Bundle
+          import android.view.Gravity
+          import android.view.View
+          import android.widget.CheckBox
+          import android.widget.LinearLayout
+          import android.widget.ScrollView
+          import android.widget.TextView
+          import android.widget.Toast
+
+          class SecurityActivity : Activity() {
+
+              private lateinit var status: TextView
+              private lateinit var pinBtn: TextView
+              private lateinit var patBtn: TextView
+              private lateinit var offBtn: TextView
+              private lateinit var cbFp: CheckBox
+              private lateinit var cbFace: CheckBox
+              private var updating = false
+
+              private fun dp(x: Int) = Ui.dp(this, x)
+
+              private fun tv(s: String, size: Float, color: Int, bold: Boolean = false): TextView {
+                  val t = TextView(this)
+                  t.text = s
+                  t.textSize = size
+                  t.setTextColor(color)
+                  if (bold) t.setTypeface(t.typeface, Typeface.BOLD)
+                  return t
+              }
+
+              private fun lp(top: Int): LinearLayout.LayoutParams {
+                  val p = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                  p.topMargin = dp(top)
+                  return p
+              }
+
+              private fun btn(s: String, fg: Int, click: () -> Unit): TextView {
+                  val b = tv(s, 14f, fg, true)
+                  b.gravity = Gravity.CENTER
+                  b.background = Ui.rect(this, Ui.FIELD, 14, Ui.CARD_STROKE, 1)
+                  b.setOnClickListener { click() }
+                  return b
+              }
+
+              private fun card(): LinearLayout {
+                  val c = LinearLayout(this)
+                  c.orientation = LinearLayout.VERTICAL
+                  c.setPadding(dp(16), dp(14), dp(16), dp(14))
+                  c.background = Ui.rect(this, Ui.CARD, 20, Ui.CARD_STROKE, 1)
+                  return c
+              }
+
+              private fun box(s: String): CheckBox {
+                  val c = CheckBox(this)
+                  c.text = s
+                  c.textSize = 15f
+                  c.setTextColor(Ui.TEXT)
+                  c.buttonTintList = ColorStateList.valueOf(Ui.GREEN)
+                  return c
+              }
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  window.statusBarColor = Ui.BG_TOP
+                  window.navigationBarColor = Ui.BG_BOTTOM
+
+                  val root = LinearLayout(this)
+                  root.orientation = LinearLayout.VERTICAL
+                  root.background = Ui.pageBg()
+                  root.layoutDirection = View.LAYOUT_DIRECTION_RTL
+
+                  val bar = LinearLayout(this)
+                  bar.orientation = LinearLayout.HORIZONTAL
+                  bar.gravity = Gravity.CENTER_VERTICAL
+                  bar.setPadding(dp(8), dp(14), dp(12), dp(10))
+                  val back = tv("→", 24f, Ui.TEXT)
+                  back.setPadding(dp(12), dp(4), dp(12), dp(4))
+                  back.setOnClickListener { onBackPressed() }
+                  bar.addView(back)
+                  bar.addView(tv("امنیت", 19f, Ui.TEXT, true), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                  root.addView(bar)
+
+                  val scroll = ScrollView(this)
+                  val body = LinearLayout(this)
+                  body.orientation = LinearLayout.VERTICAL
+                  body.setPadding(dp(16), dp(4), dp(16), dp(24))
+                  scroll.addView(body)
+                  root.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+
+                  // ---- lock card ----
+                  val c1 = card()
+                  c1.addView(tv("قفل ورود به برنامه", 15f, Ui.GREEN, true))
+                  status = tv("", 13f, Ui.TEXT, true)
+                  c1.addView(status, lp(8))
+                  c1.addView(
+                      tv(
+                          "وقتی قفل فعال است، با زدن روی آیکون برنامه یا روی اعلان‌ها، اول صفحه‌ی قفل نمایش داده می‌شود. دانلود با «اشتراک‌گذاری» بدون باز کردن قفل انجام می‌شود.",
+                          12f, Ui.MUTED
+                      ),
+                      lp(6)
+                  )
+                  pinBtn = btn("", Ui.TEXT) { openSet("pin") }
+                  patBtn = btn("", Ui.TEXT) { openSet("pattern") }
+                  offBtn = btn("🔓 غیرفعال کردن قفل", Ui.DANGER) { confirmOff() }
+                  c1.addView(pinBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)).also { it.topMargin = dp(12) })
+                  c1.addView(patBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)).also { it.topMargin = dp(8) })
+                  c1.addView(offBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)).also { it.topMargin = dp(8) })
+                  body.addView(c1, lp(6))
+
+                  // ---- biometric card ----
+                  val c2 = card()
+                  c2.addView(tv("باز کردن با اثر انگشت یا چهره", 15f, Ui.GREEN, true))
+                  c2.addView(
+                      tv(
+                          "با تیک زدن، هنگام ورود اول اثر انگشت یا چهره خواسته می‌شود و اگر نشد یا لغو کردی، با رمز یا الگو وارد می‌شوی. اگر فقط «اثر انگشت» تیک بخورد، فقط اثر انگشت پذیرفته می‌شود؛ اندروید اجازه نمی‌دهد «فقط چهره» را جدا از اثر انگشت اجباری کنیم و اگر هر دو ثبت شده باشند، هر دو پذیرفته می‌شوند.",
+                          12f, Ui.MUTED
+                      ),
+                      lp(6)
+                  )
+                  cbFp = box("اثر انگشت")
+                  cbFace = box("تشخیص چهره")
+                  c2.addView(cbFp, lp(8))
+                  c2.addView(cbFace, lp(0))
+                  body.addView(c2, lp(14))
+
+                  cbFp.setOnCheckedChangeListener { _, on ->
+                      if (updating) return@setOnCheckedChangeListener
+                      if (on && !packageManager.hasSystemFeature(PackageManager.FEATURE_FINGERPRINT)) {
+                          Toast.makeText(this, "این گوشی حسگر اثر انگشت ندارد", Toast.LENGTH_SHORT).show()
+                          refresh()
+                          return@setOnCheckedChangeListener
+                      }
+                      AppLock.setFp(this, on)
+                      if (on) hintEnrolled()
+                  }
+                  cbFace.setOnCheckedChangeListener { _, on ->
+                      if (updating) return@setOnCheckedChangeListener
+                      if (on && Build.VERSION.SDK_INT < 28) {
+                          Toast.makeText(this, "تشخیص چهره در این نسخه‌ی اندروید پشتیبانی نمی‌شود", Toast.LENGTH_SHORT).show()
+                          refresh()
+                          return@setOnCheckedChangeListener
+                      }
+                      AppLock.setFace(this, on)
+                  }
+
+                  setContentView(root)
+                  refresh()
+              }
+
+              @Suppress("DEPRECATION")
+              private fun hintEnrolled() {
+                  try {
+                      val fm = getSystemService(Context.FINGERPRINT_SERVICE) as? android.hardware.fingerprint.FingerprintManager
+                      if (fm != null && !fm.hasEnrolledFingerprints()) {
+                          Toast.makeText(this, "اول در تنظیمات گوشی یک اثر انگشت ثبت کن", Toast.LENGTH_LONG).show()
+                      }
+                  } catch (t: Throwable) {
+                  }
+              }
+
+              override fun onResume() {
+                  super.onResume()
+                  refresh()
+              }
+
+              private fun refresh() {
+                  val t = AppLock.type(this)
+                  val on = t.isNotEmpty()
+                  status.text = when (t) {
+                      "pin" -> "🔒 فعال با رمز عددی"
+                      "pattern" -> "🔒 فعال با الگو"
+                      else -> "🔓 قفل غیرفعال است"
+                  }
+                  status.setTextColor(if (on) Ui.GREEN else Ui.MUTED)
+                  pinBtn.text = "🔢 رمز عددی" + (if (t == "pin") "  ✓ فعال (تغییر)" else "")
+                  patBtn.text = "🔷 الگو" + (if (t == "pattern") "  ✓ فعال (تغییر)" else "")
+                  offBtn.visibility = if (on) View.VISIBLE else View.GONE
+                  updating = true
+                  cbFp.isChecked = on && AppLock.fp(this)
+                  cbFace.isChecked = on && AppLock.face(this)
+                  cbFp.isEnabled = on
+                  cbFace.isEnabled = on
+                  cbFp.alpha = if (on) 1f else 0.45f
+                  cbFace.alpha = if (on) 1f else 0.45f
+                  updating = false
+              }
+
+              private fun openSet(type: String) {
+                  val i = Intent(this, LockActivity::class.java)
+                  i.putExtra("mode", "set")
+                  i.putExtra("type", type)
+                  startActivityForResult(i, 51)
+              }
+
+              private fun confirmOff() {
+                  AlertDialog.Builder(this)
+                      .setTitle("غیرفعال کردن قفل؟")
+                      .setMessage("رمز یا الگو و تنظیمات اثر انگشت و چهره پاک می‌شود.")
+                      .setPositiveButton("غیرفعال کن") { _, _ ->
+                          AppLock.clear(this)
+                          refresh()
+                      }
+                      .setNegativeButton("لغو", null)
+                      .show()
+              }
+
+              override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+                  super.onActivityResult(requestCode, resultCode, data)
+                  if (requestCode == 51 && resultCode == RESULT_OK) {
+                      Toast.makeText(this, "قفل فعال شد", Toast.LENGTH_SHORT).show()
+                  }
+                  refresh()
+              }
+
+              override fun finish() {
+                  super.finish()
+                  Nav.close(this)
               }
           }
           EOF
