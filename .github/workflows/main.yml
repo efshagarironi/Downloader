@@ -140,6 +140,44 @@ jobs:
               <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
               <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 
+              <queries>
+                  <package android:name="app.revanced.android.apps.youtube.music" />
+                  <package android:name="app.revanced.android.youtube" />
+                  <package android:name="com.aparat" />
+                  <package android:name="com.aparat.android" />
+                  <package android:name="com.bilibili.app.in" />
+                  <package android:name="com.dailymotion.dailymotion" />
+                  <package android:name="com.facebook.katana" />
+                  <package android:name="com.facebook.lite" />
+                  <package android:name="com.google.android.apps.youtube.music" />
+                  <package android:name="com.google.android.youtube" />
+                  <package android:name="com.instagram.android" />
+                  <package android:name="com.instagram.barcelona" />
+                  <package android:name="com.instagram.lite" />
+                  <package android:name="com.kwai.video" />
+                  <package android:name="com.linkedin.android" />
+                  <package android:name="com.pinterest" />
+                  <package android:name="com.reddit.frontpage" />
+                  <package android:name="com.rumble.battles" />
+                  <package android:name="com.snapchat.android" />
+                  <package android:name="com.soundcloud.android" />
+                  <package android:name="com.ss.android.ugc.trill" />
+                  <package android:name="com.twitter.android" />
+                  <package android:name="com.twitter.android.lite" />
+                  <package android:name="com.vanced.android.youtube" />
+                  <package android:name="com.vimeo.android.videoapp" />
+                  <package android:name="com.zhiliaoapp.musically" />
+                  <package android:name="ir.aparat.android" />
+                  <package android:name="org.telegram.messenger" />
+                  <package android:name="org.telegram.messenger.web" />
+                  <package android:name="org.telegram.plus" />
+                  <package android:name="org.thunderdog.challegram" />
+                  <package android:name="tv.danmaku.bili" />
+                  <package android:name="tv.twitch.android.app" />
+                  <package android:name="video.like" />
+              </queries>
+
+
               <application
                   android:label="Downloader"
                   android:icon="@mipmap/ic_launcher"
@@ -166,6 +204,10 @@ jobs:
 
                   <activity
                       android:name=".DownloadsActivity"
+                      android:exported="false" />
+
+                  <activity
+                      android:name=".QualitySettingsActivity"
                       android:exported="false" />
 
                   <activity
@@ -1052,6 +1094,7 @@ jobs:
               private var pendingUrl: String? = null
               private lateinit var igBtn: TextView
               private lateinit var ytBtn: TextView
+              private lateinit var askSub: TextView
 
               private val modes = listOf("best", "1080", "720", "480", "360", "audio")
               private val labels = listOf("بهترین کیفیت", "1080p", "720p", "480p", "360p", "فقط صدا (MP3)")
@@ -1108,6 +1151,11 @@ jobs:
                   refreshLog()
                   refreshInsta()
                   refreshYt()
+                  refreshAskSub()
+              }
+
+              private fun refreshAskSub() {
+                  askSub.text = AskPrefs.summary(this)
               }
 
               override fun onNewIntent(intent: Intent) {
@@ -1139,8 +1187,7 @@ jobs:
 
               // Shared from another app: ask for the quality (if enabled) or use the saved one.
               private fun proceedShare(url: String) {
-                  val ask = getSharedPreferences("prefs", MODE_PRIVATE).getBoolean("ask", true)
-                  if (ask) askQuality(url) else startDownload(url, true)
+                  if (AskPrefs.shouldAsk(this, url)) askQuality(url) else startDownload(url, true)
               }
 
               private fun askQuality(url: String) {
@@ -1396,22 +1443,36 @@ jobs:
 
                   root.addView(card, lp())
 
-                  // ---------- Ask quality on share ----------
-                  val askRow = LinearLayout(this)
-                  askRow.orientation = LinearLayout.HORIZONTAL
-                  askRow.gravity = Gravity.CENTER_VERTICAL
-                  askRow.setPadding(dp(6), dp(6), dp(6), dp(6))
-                  askRow.addView(
-                      label("پرسیدن کیفیت هنگام اشتراک‌گذاری از برنامه‌های دیگر", 13f, Ui.MUTED),
-                      LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                  )
-                  val sw = android.widget.Switch(this)
-                  sw.isChecked = getSharedPreferences("prefs", MODE_PRIVATE).getBoolean("ask", true)
-                  sw.setOnCheckedChangeListener { _, c ->
-                      getSharedPreferences("prefs", MODE_PRIVATE).edit().putBoolean("ask", c).apply()
+                  // ---------- Ask quality card ----------
+                  val askCard = LinearLayout(this)
+                  askCard.orientation = LinearLayout.HORIZONTAL
+                  askCard.gravity = Gravity.CENTER_VERTICAL
+                  askCard.setPadding(dp(16), dp(14), dp(16), dp(14))
+                  val askBg = grad(Ui.GREEN_SEL, Color.parseColor("#17304F"), 22)
+                  askBg.setStroke(dp(1), Ui.GREEN)
+                  askCard.background = askBg
+                  askCard.elevation = dp(3).toFloat()
+                  askCard.isClickable = true
+                  askCard.setOnClickListener {
+                      startActivity(Intent(this, QualitySettingsActivity::class.java))
                   }
-                  askRow.addView(sw)
-                  root.addView(askRow, lp(14))
+
+                  val askIc = label("🎚", 22f, Color.WHITE)
+                  askIc.gravity = Gravity.CENTER
+                  askIc.background = Ui.oval(Color.argb(45, 34, 197, 94))
+                  askCard.addView(askIc, LinearLayout.LayoutParams(dp(48), dp(48)))
+
+                  val askTxt = LinearLayout(this)
+                  askTxt.orientation = LinearLayout.VERTICAL
+                  askTxt.setPaddingRelative(dp(12), 0, dp(8), 0)
+                  askTxt.addView(label("پرسیدن کیفیت هنگام اشتراک‌گذاری از برنامه‌های دیگر", 14.5f, Ui.TEXT, true))
+                  askSub = label("", 12f, Ui.MUTED)
+                  askSub.setPadding(0, dp(3), 0, 0)
+                  askTxt.addView(askSub)
+                  askCard.addView(askTxt, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                  askCard.addView(label("‹", 28f, Ui.GREEN, true))
+                  root.addView(askCard, lp(16))
+                  refreshAskSub()
 
                   // ---------- Instagram login ----------
                   igBtn = label("", 13f, Ui.MUTED, true)
@@ -1480,6 +1541,395 @@ jobs:
                   root.addView(logCard, lp(16))
 
                   setContentView(page)
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/sharedl/app/QualitySettingsActivity.kt <<'EOF'
+          package com.sharedl.app
+
+          import android.app.Activity
+          import android.content.Context
+          import android.content.res.ColorStateList
+          import android.graphics.Color
+          import android.graphics.Typeface
+          import android.graphics.drawable.Drawable
+          import android.net.Uri
+          import android.os.Bundle
+          import android.view.Gravity
+          import android.view.View
+          import android.widget.CheckBox
+          import android.widget.EditText
+          import android.widget.ImageView
+          import android.widget.LinearLayout
+          import android.widget.ScrollView
+          import android.widget.TextView
+          import android.widget.Toast
+
+          class Platform(val id: String, val name: String, val packages: List<String>, val domains: List<String>)
+
+          object AskPrefs {
+              val platforms: List<Platform> = listOf(
+                  Platform("youtube", "یوتیوب", listOf("com.google.android.youtube", "app.revanced.android.youtube", "com.vanced.android.youtube"), listOf("youtube.com", "youtu.be")),
+                  Platform("ytmusic", "یوتیوب موزیک", listOf("com.google.android.apps.youtube.music", "app.revanced.android.apps.youtube.music"), listOf("music.youtube.com")),
+                  Platform("instagram", "اینستاگرام", listOf("com.instagram.android", "com.instagram.lite"), listOf("instagram.com", "instagr.am")),
+                  Platform("threads", "تردز", listOf("com.instagram.barcelona"), listOf("threads.net", "threads.com")),
+                  Platform("x", "ایکس (توییتر)", listOf("com.twitter.android", "com.twitter.android.lite"), listOf("x.com", "twitter.com", "t.co")),
+                  Platform("tiktok", "تیک‌تاک", listOf("com.zhiliaoapp.musically", "com.ss.android.ugc.trill"), listOf("tiktok.com")),
+                  Platform("facebook", "فیسبوک", listOf("com.facebook.katana", "com.facebook.lite"), listOf("facebook.com", "fb.watch", "fb.com")),
+                  Platform("telegram", "تلگرام", listOf("org.telegram.messenger", "org.telegram.messenger.web", "org.thunderdog.challegram", "org.telegram.plus"), listOf("t.me", "telegram.me")),
+                  Platform("reddit", "ردیت", listOf("com.reddit.frontpage"), listOf("reddit.com", "redd.it")),
+                  Platform("pinterest", "پینترست", listOf("com.pinterest"), listOf("pinterest.com", "pin.it")),
+                  Platform("snapchat", "اسنپ‌چت", listOf("com.snapchat.android"), listOf("snapchat.com")),
+                  Platform("twitch", "توییچ", listOf("tv.twitch.android.app"), listOf("twitch.tv")),
+                  Platform("vimeo", "ویمئو", listOf("com.vimeo.android.videoapp"), listOf("vimeo.com")),
+                  Platform("dailymotion", "دیلی‌موشن", listOf("com.dailymotion.dailymotion"), listOf("dailymotion.com", "dai.ly")),
+                  Platform("soundcloud", "ساندکلاود", listOf("com.soundcloud.android"), listOf("soundcloud.com")),
+                  Platform("linkedin", "لینکدین", listOf("com.linkedin.android"), listOf("linkedin.com", "lnkd.in")),
+                  Platform("bilibili", "بیلی‌بیلی", listOf("tv.danmaku.bili", "com.bilibili.app.in"), listOf("bilibili.com", "b23.tv")),
+                  Platform("likee", "لایکی", listOf("video.like"), listOf("likee.video", "likee.com")),
+                  Platform("aparat", "آپارات", listOf("com.aparat", "com.aparat.android", "ir.aparat.android"), listOf("aparat.com")),
+                  Platform("rumble", "رامبل", listOf("com.rumble.battles"), listOf("rumble.com")),
+                  Platform("kwai", "کوایی", listOf("com.kwai.video"), listOf("kwai.com"))
+              )
+
+              private fun sp(ctx: Context) = ctx.getSharedPreferences("prefs", Context.MODE_PRIVATE)
+
+              fun askAll(ctx: Context): Boolean = sp(ctx).getBoolean("qs_all", false)
+              fun setAskAll(ctx: Context, v: Boolean) {
+                  sp(ctx).edit().putBoolean("qs_all", v).apply()
+              }
+
+              fun platOn(ctx: Context): Set<String> = HashSet(sp(ctx).getStringSet("qs_plat_on", emptySet()) ?: emptySet())
+              fun setPlat(ctx: Context, id: String, on: Boolean) {
+                  val s = HashSet(platOn(ctx))
+                  if (on) s.add(id) else s.remove(id)
+                  sp(ctx).edit().putStringSet("qs_plat_on", s).apply()
+              }
+
+              fun sites(ctx: Context): List<String> =
+                  (sp(ctx).getString("qs_sites", "") ?: "").split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+
+              fun sitesOn(ctx: Context): Set<String> = HashSet(sp(ctx).getStringSet("qs_sites_on", emptySet()) ?: emptySet())
+
+              fun setSiteOn(ctx: Context, host: String, on: Boolean) {
+                  val s = HashSet(sitesOn(ctx))
+                  if (on) s.add(host) else s.remove(host)
+                  sp(ctx).edit().putStringSet("qs_sites_on", s).apply()
+              }
+
+              fun normalizeHost(raw: String): String? {
+                  var s = raw.trim().lowercase()
+                  s = s.removePrefix("https://").removePrefix("http://")
+                  s = s.substringBefore("/").substringBefore("?").substringBefore("#").substringBefore(":")
+                  s = s.removePrefix("www.")
+                  if (s.isEmpty() || !s.contains(".") || s.contains(" ") || s.startsWith(".") || s.endsWith(".")) return null
+                  return s
+              }
+
+              fun addSite(ctx: Context, host: String) {
+                  val l = ArrayList(sites(ctx))
+                  if (!l.contains(host)) l.add(host)
+                  sp(ctx).edit().putString("qs_sites", l.joinToString("\n")).apply()
+                  setSiteOn(ctx, host, true)
+              }
+
+              fun removeSite(ctx: Context, host: String) {
+                  val l = ArrayList(sites(ctx))
+                  l.remove(host)
+                  sp(ctx).edit().putString("qs_sites", l.joinToString("\n")).apply()
+                  setSiteOn(ctx, host, false)
+              }
+
+              fun hostOf(url: String): String {
+                  return try {
+                      (Uri.parse(url).host ?: "").lowercase().removePrefix("www.")
+                  } catch (e: Exception) {
+                      ""
+                  }
+              }
+
+              private fun matches(host: String, domain: String): Boolean = host == domain || host.endsWith("." + domain)
+
+              fun platformFor(host: String): Platform? {
+                  var best: Platform? = null
+                  var bestLen = 0
+                  for (p in platforms) {
+                      for (d in p.domains) {
+                          if (matches(host, d) && d.length > bestLen) {
+                              best = p
+                              bestLen = d.length
+                          }
+                      }
+                  }
+                  return best
+              }
+
+              // True when the quality must be asked before downloading this link.
+              fun shouldAsk(ctx: Context, url: String): Boolean {
+                  if (askAll(ctx)) return true
+                  val host = hostOf(url)
+                  if (host.isEmpty()) return false
+                  val on = sitesOn(ctx)
+                  for (s in sites(ctx)) {
+                      if (on.contains(s) && matches(host, s)) return true
+                  }
+                  val pl = platformFor(host)
+                  if (pl != null && platOn(ctx).contains(pl.id)) return true
+                  return false
+              }
+
+              fun summary(ctx: Context): String {
+                  if (askAll(ctx)) return "برای همه سایت‌ها کیفیت پرسیده می‌شود"
+                  val sites = sites(ctx)
+                  val n = platOn(ctx).size + sitesOn(ctx).count { sites.contains(it) }
+                  return if (n == 0) "هیچ موردی فعال نیست • با کیفیت پیش‌فرض دانلود می‌شود"
+                  else "کیفیت برای " + n + " مورد پرسیده می‌شود • برای تنظیم بزن"
+              }
+
+              fun icon(ctx: Context, p: Platform): Drawable? {
+                  for (pk in p.packages) {
+                      try {
+                          return ctx.packageManager.getApplicationIcon(pk)
+                      } catch (e: Exception) {
+                      }
+                  }
+                  return null
+              }
+          }
+
+          class QualitySettingsActivity : Activity() {
+
+              private lateinit var platBox: LinearLayout
+              private lateinit var siteBox: LinearLayout
+              private lateinit var body: LinearLayout
+              private var showAll = false
+
+              private fun dp(x: Int) = Ui.dp(this, x)
+
+              private fun tv(s: String, size: Float, color: Int, bold: Boolean = false): TextView {
+                  val t = TextView(this)
+                  t.text = s
+                  t.textSize = size
+                  t.setTextColor(color)
+                  if (bold) t.setTypeface(t.typeface, Typeface.BOLD)
+                  return t
+              }
+
+              private fun tint(): ColorStateList = ColorStateList(
+                  arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+                  intArrayOf(Ui.GREEN, Ui.MUTED)
+              )
+
+              private fun rowParams(top: Int): LinearLayout.LayoutParams {
+                  val p = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                  p.topMargin = dp(top)
+                  return p
+              }
+
+              // One row: [icon] [title + subtitle] [checkbox]
+              private fun checkRow(
+                  iconView: View?,
+                  title: String,
+                  sub: String?,
+                  checked: Boolean,
+                  onChange: (Boolean) -> Unit
+              ): LinearLayout {
+                  val row = LinearLayout(this)
+                  row.orientation = LinearLayout.HORIZONTAL
+                  row.gravity = Gravity.CENTER_VERTICAL
+                  row.setPadding(dp(14), dp(10), dp(10), dp(10))
+                  row.background = Ui.rect(this, Ui.CARD, 16, Ui.CARD_STROKE, 1)
+                  if (iconView != null) {
+                      val lp = LinearLayout.LayoutParams(dp(40), dp(40))
+                      lp.marginEnd = dp(12)
+                      row.addView(iconView, lp)
+                  }
+                  val col = LinearLayout(this)
+                  col.orientation = LinearLayout.VERTICAL
+                  col.addView(tv(title, 14.5f, Ui.TEXT, true))
+                  if (sub != null) col.addView(tv(sub, 12f, Ui.MUTED))
+                  row.addView(col, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                  val cb = CheckBox(this)
+                  cb.buttonTintList = tint()
+                  cb.isChecked = checked
+                  cb.setOnCheckedChangeListener { _, c -> onChange(c) }
+                  row.addView(cb)
+                  row.setOnClickListener { cb.toggle() }
+                  return row
+              }
+
+              private fun letterIcon(s: String): View {
+                  val t = tv(s.take(1), 17f, Ui.GREEN, true)
+                  t.gravity = Gravity.CENTER
+                  t.background = Ui.oval(Ui.FIELD, Ui.CARD_STROKE, dp(1))
+                  return t
+              }
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  window.statusBarColor = Ui.BG_TOP
+                  window.navigationBarColor = Ui.BG_BOTTOM
+
+                  val page = ScrollView(this)
+                  page.background = Ui.pageBg()
+                  page.isFillViewport = true
+                  page.layoutDirection = View.LAYOUT_DIRECTION_RTL
+
+                  val root = LinearLayout(this)
+                  root.orientation = LinearLayout.VERTICAL
+                  root.setPadding(dp(20), dp(24), dp(20), dp(28))
+                  page.addView(root)
+
+                  // ---------- Header ----------
+                  val header = LinearLayout(this)
+                  header.orientation = LinearLayout.HORIZONTAL
+                  header.gravity = Gravity.CENTER_VERTICAL
+                  val back = tv("→", 26f, Ui.TEXT, true)
+                  back.gravity = Gravity.CENTER
+                  back.setOnClickListener { finish() }
+                  header.addView(back, LinearLayout.LayoutParams(dp(44), dp(44)))
+                  val ttl = tv("پرسیدن کیفیت هنگام دانلود", 19f, Ui.TEXT, true)
+                  ttl.setPaddingRelative(dp(8), 0, 0, 0)
+                  header.addView(ttl)
+                  root.addView(header, rowParams(0))
+
+                  val hint = tv(
+                      "فقط برای پلتفرم‌ها و سایت‌های تیک‌خورده هنگام دانلود کیفیت پرسیده می‌شود. بقیه بدون پرسش و با کیفیت پیش‌فرض دانلود می‌شوند.",
+                      12.5f, Ui.MUTED
+                  )
+                  hint.setPadding(0, dp(10), 0, dp(6))
+                  root.addView(hint, rowParams(0))
+
+                  body = LinearLayout(this)
+                  body.orientation = LinearLayout.VERTICAL
+
+                  // ---------- Ask for all sites ----------
+                  val allRow = checkRow(
+                      letterIcon("∞"),
+                      "پرسیدن کیفیت برای همه سایت‌ها",
+                      "با روشن‌بودن این گزینه، دانلود از هر سایتی با کیفیتی که هنگام دانلود انتخاب می‌کنی انجام می‌شود",
+                      AskPrefs.askAll(this)
+                  ) { c ->
+                      AskPrefs.setAskAll(this, c)
+                      body.alpha = if (c) 0.45f else 1f
+                  }
+                  allRow.background = Ui.rect(this, Ui.GREEN_SEL, 16, Ui.GREEN, 1)
+                  root.addView(allRow, rowParams(8))
+
+                  root.addView(body, rowParams(0))
+                  body.alpha = if (AskPrefs.askAll(this)) 0.45f else 1f
+
+                  // ---------- Platforms ----------
+                  val t1 = tv("پلتفرم‌های ویدئویی و صوتی روی گوشی", 13.5f, Ui.GREEN, true)
+                  t1.setPadding(0, dp(22), 0, 0)
+                  body.addView(t1, rowParams(0))
+                  platBox = LinearLayout(this)
+                  platBox.orientation = LinearLayout.VERTICAL
+                  body.addView(platBox, rowParams(0))
+
+                  // ---------- Custom sites ----------
+                  val t2 = tv("سایت‌های دلخواه", 13.5f, Ui.GREEN, true)
+                  t2.setPadding(0, dp(24), 0, 0)
+                  body.addView(t2, rowParams(0))
+
+                  val addRow = LinearLayout(this)
+                  addRow.orientation = LinearLayout.HORIZONTAL
+                  addRow.gravity = Gravity.CENTER_VERTICAL
+                  addRow.background = Ui.rect(this, Ui.FIELD, 14, Ui.CARD_STROKE, 1)
+                  addRow.setPadding(dp(12), 0, dp(6), 0)
+                  val input = EditText(this)
+                  input.hint = "آدرس سایت، مثلاً example.com"
+                  input.setHintTextColor(Ui.MUTED)
+                  input.setTextColor(Ui.TEXT)
+                  input.textSize = 14f
+                  input.setSingleLine(true)
+                  input.background = null
+                  input.textDirection = View.TEXT_DIRECTION_LTR
+                  input.gravity = Gravity.START or Gravity.CENTER_VERTICAL
+                  addRow.addView(input, LinearLayout.LayoutParams(0, dp(50), 1f))
+                  val add = tv("افزودن", 13.5f, Ui.GREEN, true)
+                  add.setPadding(dp(14), dp(10), dp(14), dp(10))
+                  add.setOnClickListener {
+                      val h = AskPrefs.normalizeHost(input.text.toString())
+                      if (h == null) {
+                          Toast.makeText(this, "یک آدرس معتبر وارد کن", Toast.LENGTH_SHORT).show()
+                      } else {
+                          AskPrefs.addSite(this, h)
+                          input.setText("")
+                          render()
+                      }
+                  }
+                  addRow.addView(add)
+                  body.addView(addRow, rowParams(8))
+
+                  siteBox = LinearLayout(this)
+                  siteBox.orientation = LinearLayout.VERTICAL
+                  body.addView(siteBox, rowParams(0))
+
+                  setContentView(page)
+                  render()
+              }
+
+              private fun render() {
+                  // platforms
+                  platBox.removeAllViews()
+                  val on = AskPrefs.platOn(this)
+                  val list = AskPrefs.platforms.filter { showAll || AskPrefs.icon(this, it) != null }
+                  if (list.isEmpty()) {
+                      val e = tv("پلتفرم شناخته‌شده‌ای روی گوشی پیدا نشد.", 13f, Ui.MUTED)
+                      e.setPadding(0, dp(10), 0, 0)
+                      platBox.addView(e, rowParams(0))
+                  }
+                  for (p in list) {
+                      val d = AskPrefs.icon(this, p)
+                      val iv: View
+                      if (d != null) {
+                          val img = ImageView(this)
+                          img.setImageDrawable(d)
+                          iv = img
+                      } else {
+                          iv = letterIcon(p.name)
+                      }
+                      val row = checkRow(iv, p.name, if (d == null) "نصب نیست" else null, on.contains(p.id)) { c ->
+                          AskPrefs.setPlat(this, p.id, c)
+                      }
+                      platBox.addView(row, rowParams(8))
+                  }
+                  val toggle = tv(
+                      if (showAll) "پنهان‌کردن پلتفرم‌های نصب‌نشده" else "نمایش پلتفرم‌های نصب‌نشده",
+                      13f, Ui.MUTED, true
+                  )
+                  toggle.gravity = Gravity.CENTER
+                  toggle.background = Ui.rect(this, Color.TRANSPARENT, 16, Ui.CARD_STROKE, 1)
+                  toggle.setOnClickListener {
+                      showAll = !showAll
+                      render()
+                  }
+                  platBox.addView(toggle, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)).also { it.topMargin = dp(10) })
+
+                  // custom sites
+                  siteBox.removeAllViews()
+                  val sites = AskPrefs.sites(this)
+                  val son = AskPrefs.sitesOn(this)
+                  if (sites.isEmpty()) {
+                      val e = tv("هنوز سایتی اضافه نکرده‌ای.", 12.5f, Ui.MUTED)
+                      e.setPadding(0, dp(10), 0, 0)
+                      siteBox.addView(e, rowParams(0))
+                  }
+                  for (s in sites) {
+                      val row = checkRow(null, s, null, son.contains(s)) { c ->
+                          AskPrefs.setSiteOn(this, s, c)
+                      }
+                      val del = tv("✕", 16f, Ui.MUTED, true)
+                      del.gravity = Gravity.CENTER
+                      del.setOnClickListener {
+                          AskPrefs.removeSite(this, s)
+                          render()
+                      }
+                      row.addView(del, 0, LinearLayout.LayoutParams(dp(36), dp(36)))
+                      siteBox.addView(row, rowParams(8))
+                  }
               }
           }
           EOF
@@ -2619,7 +3069,7 @@ jobs:
               private lateinit var seek: SeekBar
               private lateinit var cur: TextView
               private lateinit var total: TextView
-              private lateinit var playBtn: TextView
+              private lateinit var playBtn: RepeatIconView
               private lateinit var titleView: TextView
               private lateinit var hud: TextView
               private lateinit var prevBtn: ImageView
@@ -2687,7 +3137,7 @@ jobs:
                           cur.text = Ui.dur(p.toLong())
                           total.text = Ui.dur(d.toLong())
                       }
-                      playBtn.text = if (vv.isPlaying) "❚❚" else "▶"
+                      setPlayIcon(vv.isPlaying)
                       ui.postDelayed(this, 400)
                   }
               }
@@ -2710,6 +3160,21 @@ jobs:
                   t.setTypeface(t.typeface, Typeface.BOLD)
                   t.background = Ui.oval(fill)
                   return t
+              }
+
+              private fun setPlayIcon(playing: Boolean) {
+                  val k = if (playing) 4 else 3
+                  if (playBtn.kind != k) playBtn.kind = k
+              }
+
+              private fun haptic(v: View) {
+                  try {
+                      v.performHapticFeedback(
+                          android.view.HapticFeedbackConstants.VIRTUAL_KEY,
+                          android.view.HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
+                      )
+                  } catch (e: Throwable) {
+                  }
               }
 
               private fun plainIcon(s: String, sp: Float): TextView {
@@ -2996,11 +3461,11 @@ jobs:
               private fun togglePlay() {
               if (vv.isPlaying) {
               vv.pause()
-              playBtn.text = "▶"
+              setPlayIcon(false)
               showCenter("pause")
               } else {
               vv.start()
-              playBtn.text = "❚❚"
+              setPlayIcon(true)
               showCenter("play")
               }
               }
@@ -3203,7 +3668,7 @@ jobs:
                   val top = LinearLayout(this)
                   top.orientation = LinearLayout.HORIZONTAL
                   top.gravity = Gravity.CENTER_VERTICAL
-                  top.setPadding(dp(10), dp(4), dp(10), dp(28))
+                  top.setPadding(dp(10), 0, dp(10), dp(28))
                   top.background = shade(true)
 
                   val rot = RepeatIconView(this)
@@ -3314,10 +3779,12 @@ jobs:
                   prevBtn.setOnClickListener {
                       goPrev()
                   }
-                  playBtn = plainIcon("▶", 32f)
+                  playBtn = RepeatIconView(this)
+                  playBtn.kind = 3
+                  playBtn.setPadding(dp(10), dp(10), dp(10), dp(10))
                   playBtn.setOnClickListener {
                       if (vv.isPlaying) vv.pause() else vv.start()
-                      playBtn.text = if (vv.isPlaying) "❚❚" else "▶"
+                      setPlayIcon(vv.isPlaying)
                       showOverlay()
                   }
                   nextBtn = iconBtn(R.drawable.ic_next)
@@ -3331,9 +3798,15 @@ jobs:
                       p.marginEnd = dp(6)
                       return p
                   }
-                  ctl.addView(prevBtn, lpOf(48))
-                  ctl.addView(playBtn, lpOf(64))
-                  ctl.addView(nextBtn, lpOf(48))
+                  for (hb in listOf<View>(prevBtn, playBtn, nextBtn)) {
+                      hb.setOnTouchListener { v, e ->
+                          if (e.action == MotionEvent.ACTION_DOWN) haptic(v)
+                          false
+                      }
+                  }
+                  ctl.addView(prevBtn, lpOf(62))
+                  ctl.addView(playBtn, lpOf(84))
+                  ctl.addView(nextBtn, lpOf(62))
                   bottom.addView(ctl)
 
                   overlay.addView(
@@ -3410,7 +3883,7 @@ jobs:
                       if (Build.VERSION.SDK_INT >= 28) {
                           ct = ins.displayCutout?.safeInsetTop ?: 0
                       }
-                      top.setPadding(dp(10), ct + dp(4), dp(10), dp(28))
+                      top.setPadding(dp(10), if (ct > 0) maxOf(ct - dp(4), 0) else 0, dp(10), dp(28))
                       ins
                   }
                   setContentView(root)
@@ -3441,7 +3914,7 @@ jobs:
                                   return@setOnCompletionListener
                               }
                           }
-                          playBtn.text = "▶"
+                          setPlayIcon(false)
                           ui.removeCallbacks(hideRun)
                           overlay.visibility = View.VISIBLE
                   }
