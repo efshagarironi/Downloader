@@ -140,7 +140,7 @@ jobs:
               <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 
               <application
-                  android:label="دانلودر ویدئو"
+                  android:label="Downloader"
                   android:icon="@mipmap/ic_launcher"
                   android:supportsRtl="true"
                   android:largeHeap="true"
@@ -292,6 +292,68 @@ jobs:
               }
           }
 
+          fun fmtBytes(b: Long): String {
+              val v = b.toDouble()
+              return when {
+                  v >= 1073741824.0 -> String.format(java.util.Locale.US, "%.2f GB", v / 1073741824.0)
+                  v >= 1048576.0 -> String.format(java.util.Locale.US, "%.1f MB", v / 1048576.0)
+                  else -> String.format(java.util.Locale.US, "%d KB", (v / 1024.0).toLong())
+              }
+          }
+
+          class DlItem(val id: Long, val url: String, val mode: String) {
+              @Volatile var title: String = url.removePrefix("https://").removePrefix("http://").removePrefix("www.").take(60)
+              @Volatile var state = 0 // 0 = queued, 1 = downloading, 2 = saving
+              @Volatile var pct = -1
+              @Volatile var done = 0L
+              @Volatile var total = 0L
+              @Volatile var speed = ""
+              @Volatile var eta = ""
+              @Volatile var cancelled = false
+              @Volatile var processId: String? = null
+          }
+
+          object DlQueue {
+              private val list = ArrayList<DlItem>()
+              private val handler = Handler(Looper.getMainLooper())
+              private val seq = java.util.concurrent.atomic.AtomicLong(0)
+              var onChange: (() -> Unit)? = null
+
+              fun add(url: String, mode: String): DlItem {
+                  val item = DlItem(seq.incrementAndGet(), url, mode)
+                  synchronized(list) { list.add(item) }
+                  changed()
+                  return item
+              }
+
+              fun remove(item: DlItem) {
+                  synchronized(list) { list.remove(item) }
+                  changed()
+              }
+
+              fun snapshot(): List<DlItem> = synchronized(list) { ArrayList(list) }
+
+              // Cancels a queued or running download; the next queued item starts automatically.
+              fun cancel(id: Long) {
+                  val item = synchronized(list) { list.firstOrNull { it.id == id } } ?: return
+                  item.cancelled = true
+                  val pid = item.processId
+                  if (pid != null) {
+                      Thread {
+                          try {
+                              YoutubeDL.getInstance().destroyProcessById(pid)
+                          } catch (e: Throwable) {
+                          }
+                      }.start()
+                  }
+                  remove(item)
+              }
+
+              fun changed() {
+                  handler.post { onChange?.invoke() }
+              }
+          }
+
           class DownloadService : Service() {
 
               private val exec = Executors.newSingleThreadExecutor()
@@ -312,17 +374,20 @@ jobs:
                       }
                       return START_NOT_STICKY
                   }
+                  val item = DlQueue.add(url, mode)
                   pending.incrementAndGet()
                   exec.execute {
                       try {
-                          download(url, mode)
+                          if (!item.cancelled) download(url, mode, item)
                       } catch (t: Throwable) {
+                          if (item.cancelled) return@execute
                           val full = (t.message ?: t.toString()).trim()
                           val m = full.take(400)
                           val hint = if (m.contains("Instagram", true)) "\nℹ️ اگر مشکل ادامه داشت، از صفحه اصلی «ورود به اینستاگرام» را (دوباره) انجام بده." else ""
                           Bus.post("❌ خطا: $m" + hint)
                           notify(2, buildNotif("❌ دانلود ناموفق بود: " + full.lines().last().take(100), -1, false))
                       } finally {
+                          DlQueue.remove(item)
                           if (pending.decrementAndGet() == 0) {
                               stopForeground(true)
                               stopSelf()
@@ -338,6 +403,12 @@ jobs:
                   req.addOption("--no-mtime")
                   req.addOption("--retries", "5")
                   req.addOption("--fragment-retries", "5")
+                  req.addOption("-N", "8")
+                  req.addOption("--socket-timeout", "20")
+                  req.addOption("--throttled-rate", "100K")
+                  if (Regex("(youtube\\.com|youtu\\.be|youtube-nocookie\\.com)", RegexOption.IGNORE_CASE).containsMatchIn(url)) {
+                      req.addOption("--http-chunk-size", "10M")
+                  }
                   req.addOption("-o", dir.absolutePath + "/%(title).80s [%(id)s].%(ext)s")
                   val igCookies = File(filesDir, "ig_cookies.txt")
                   if (igCookies.exists() && Regex("instagram\\.com", RegexOption.IGNORE_CASE).containsMatchIn(url)) {
@@ -374,7 +445,7 @@ jobs:
                   return req
               }
 
-              private fun download(rawUrl: String, mode: String) {
+              private fun download(rawUrl: String, mode: String, item: DlItem) {
                   val url = resolveShare(rawUrl)
                   val q = when (mode) {
                       "best" -> "بهترین کیفیت"
@@ -382,21 +453,15 @@ jobs:
                       else -> mode + "p"
                   }
                   Bus.post("⏳ شروع (" + q + "): $url")
+                  item.state = 1
+                  DlQueue.changed()
+                  notify(1, progressNotif(item))
                   Engine.ensureInit(this)
 
                   val dir = File(cacheDir, "dl_" + System.currentTimeMillis())
                   dir.mkdirs()
 
                   var updated = false
-                  if (System.currentTimeMillis() - Engine.lastUpdate(this) > 12L * 3600L * 1000L) {
-                      updated = true
-                      try {
-                          Bus.post("🔄 به‌روزرسانی موتور دانلود…")
-                          Engine.update(this)
-                      } catch (e: Throwable) {
-                          Bus.post("⚠️ آپدیت موتور ممکن نشد، ادامه می‌دهیم…")
-                      }
-                  }
 
                   val isYoutube = Regex("(youtube\\.com|youtu\\.be|youtube-nocookie\\.com)", RegexOption.IGNORE_CASE).containsMatchIn(url)
                   val isThreads = Regex("threads\\.(net|com)", RegexOption.IGNORE_CASE).containsMatchIn(url)
@@ -425,15 +490,15 @@ jobs:
                       if (!directOk) Bus.post("⚠️ Threads مستقیم: " + directLog.take(300))
                   }
                   while (!directOk && ci < clients.size) {
+                      if (item.cancelled) break
                       try {
                           dir.listFiles()?.forEach { it.delete() }
                           val req = buildRequest(clients[ci].first, mode, dir, clients[ci].second, clients[ci].third)
-                          YoutubeDL.getInstance().execute(req, "dl_" + System.currentTimeMillis()) { progress, _, _ ->
-                              val p = progress.toInt()
-                              if (p != lastPct && p in 0..100) {
-                                  lastPct = p
-                                  notify(1, buildNotif("در حال دانلود… $p%", p, true))
-                              }
+                          val pid = "dl_" + System.currentTimeMillis()
+                          item.processId = pid
+                          if (item.cancelled) break
+                          YoutubeDL.getInstance().execute(req, pid) { progress, eta, line ->
+                              onProgress(item, progress, eta, line)
                           }
                           val ok = dir.listFiles()?.any {
                               it.isFile && it.extension.lowercase() !in setOf("part", "ytdl", "temp") &&
@@ -444,6 +509,7 @@ jobs:
                           break
                       } catch (t: Throwable) {
                           lastErr = t
+                          if (item.cancelled) break
                           val em = (t.message ?: t.toString())
                           Bus.post("⚠️ " + em.trim().lines().last().take(160))
                           if (isYoutube && em.contains("429")) {
@@ -466,6 +532,11 @@ jobs:
                           }
                       }
                   }
+                  if (item.cancelled) {
+                      dir.deleteRecursively()
+                      Bus.post("🚫 دانلود لغو شد: " + item.title)
+                      return
+                  }
                   if (lastErr != null && isInsta) {
                       try {
                           Bus.post("↻ تلاش با روش مستقیم…")
@@ -487,6 +558,8 @@ jobs:
                   if (files.isEmpty()) throw RuntimeException("فایلی دانلود نشد")
 
                   for (f in files) {
+                      item.state = 2
+                      DlQueue.changed()
                       notify(1, buildNotif("در حال ذخیره…", -1, true))
                       val saved = saveToPublic(f)
                       Bus.post("✅ ذخیره شد: " + f.name)
@@ -708,10 +781,10 @@ jobs:
 
                   if (Build.VERSION.SDK_INT >= 29) {
                       val (collection, rel) = when {
-                          isAudio -> Pair(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, Environment.DIRECTORY_MUSIC + "/ShareDL")
-                          isVideo -> Pair(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, Environment.DIRECTORY_MOVIES + "/ShareDL")
-                          isImage -> Pair(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, Environment.DIRECTORY_PICTURES + "/ShareDL")
-                          else -> Pair(MediaStore.Downloads.EXTERNAL_CONTENT_URI, Environment.DIRECTORY_DOWNLOADS + "/ShareDL")
+                          isAudio -> Pair(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, Environment.DIRECTORY_MUSIC + "/Downloader")
+                          isVideo -> Pair(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, Environment.DIRECTORY_MOVIES + "/Downloader")
+                          isImage -> Pair(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, Environment.DIRECTORY_PICTURES + "/Downloader")
+                          else -> Pair(MediaStore.Downloads.EXTERNAL_CONTENT_URI, Environment.DIRECTORY_DOWNLOADS + "/Downloader")
                       }
                       val values = ContentValues().apply {
                           put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)
@@ -735,13 +808,78 @@ jobs:
                               else -> Environment.DIRECTORY_DOWNLOADS
                           }
                       )
-                      val target = File(base, "ShareDL")
+                      val target = File(base, "Downloader")
                       target.mkdirs()
                       val out = File(target, file.name)
                       file.copyTo(out, overwrite = true)
                       MediaScannerConnection.scanFile(this, arrayOf(out.absolutePath), arrayOf(mime), null)
                       return Uri.fromFile(out)
                   }
+              }
+
+              private val sizeRe = Regex("(\\d+(?:\\.\\d+)?)%\\s+of\\s+~?\\s*(\\d+(?:\\.\\d+)?)\\s*([KMGT]?)i?B")
+              private val speedRe = Regex("at\\s+(\\S+/s)")
+              private val etaRe = Regex("ETA\\s+(\\S+)")
+              private val destRe = Regex("Destination:\\s*(.+?)\\s*\$")
+              private var lastNotifAt = 0L
+
+              // Reads yt-dlp's progress line: "[download]  45.3% of ~ 27.10MiB at 1.20MiB/s ETA 00:05"
+              private fun onProgress(item: DlItem, progress: Float, eta: Long, line: String) {
+                  if (item.cancelled) return
+                  val dm = destRe.find(line)
+                  if (dm != null) {
+                      val base = File(dm.groupValues[1]).name.substringBeforeLast('.')
+                      val t = base.replace(Regex("\\s*\\[[^\\]]*\\]\\s*\$"), "")
+                      if (t.isNotBlank()) item.title = t
+                  }
+                  val m = sizeRe.find(line)
+                  if (m != null) {
+                      val unit = when (m.groupValues[3]) {
+                          "K" -> 1024.0
+                          "M" -> 1048576.0
+                          "G" -> 1073741824.0
+                          "T" -> 1099511627776.0
+                          else -> 1.0
+                      }
+                      val pc = m.groupValues[1].toDouble()
+                      val tot = (m.groupValues[2].toDouble() * unit).toLong()
+                      item.total = tot
+                      item.done = (tot * (pc / 100.0)).toLong()
+                      item.pct = pc.toInt().coerceIn(0, 100)
+                  } else if (progress >= 0f) {
+                      item.pct = progress.toInt().coerceIn(0, 100)
+                  }
+                  speedRe.find(line)?.let { item.speed = it.groupValues[1] }
+                  etaRe.find(line)?.let { item.eta = it.groupValues[1] }
+                  item.state = 1
+                  DlQueue.changed()
+                  val now = System.currentTimeMillis()
+                  if (now - lastNotifAt > 700 || item.pct >= 100) {
+                      lastNotifAt = now
+                      notify(1, progressNotif(item))
+                  }
+              }
+
+              private fun progressNotif(item: DlItem): android.app.Notification {
+                  val queued = DlQueue.snapshot().count { it.state == 0 && !it.cancelled }
+                  val text = when {
+                      item.total > 0 && item.pct >= 0 -> item.pct.toString() + "% • " + fmtBytes(item.done) + " از " + fmtBytes(item.total)
+                      item.pct >= 0 -> item.pct.toString() + "%"
+                      else -> "در حال آماده‌سازی…"
+                  }
+                  val sub = listOf(
+                      item.speed,
+                      if (item.eta.isNotEmpty()) "ETA " + item.eta else "",
+                      if (queued > 0) queued.toString() + " در صف" else ""
+                  ).filter { it.isNotEmpty() }.joinToString(" • ")
+                  return buildNotif(text, item.pct, true, null, if (sub.isEmpty()) null else sub, item.title + "\n" + text)
+              }
+
+              // Tapping the progress notification opens the downloads page, which lists the queue at the top.
+              private fun queueIntent(): PendingIntent {
+                  val i = Intent(this, DownloadsActivity::class.java)
+                  i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                  return PendingIntent.getActivity(this, 4242, i, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
               }
 
               private fun ensureChannel() {
@@ -751,10 +889,10 @@ jobs:
                   }
               }
 
-              private fun buildNotif(text: String, pct: Int, ongoing: Boolean, tapIntent: PendingIntent? = null) =
+              private fun buildNotif(text: String, pct: Int, ongoing: Boolean, tapIntent: PendingIntent? = null, sub: String? = null, big: String? = null) =
                   NotificationCompat.Builder(this, "dl")
                       .setSmallIcon(if (ongoing) android.R.drawable.stat_sys_download else android.R.drawable.stat_sys_download_done)
-                      .setContentTitle("دانلودر ویدئو")
+                      .setContentTitle("Downloader")
                       .setContentText(text)
                       .setOngoing(ongoing)
                       .setOnlyAlertOnce(true)
@@ -762,9 +900,13 @@ jobs:
                           if (pct >= 0) setProgress(100, pct, false)
                           else if (ongoing) setProgress(0, 0, true)
                           if (tapIntent != null) {
-                              setContentIntent(tapIntent)
-                              setAutoCancel(true)
+                          setContentIntent(tapIntent)
+                          setAutoCancel(true)
+                          } else if (ongoing) {
+                          setContentIntent(queueIntent())
                           }
+                          if (sub != null) setSubText(sub)
+                          if (big != null) setStyle(NotificationCompat.BigTextStyle().bigText(big))
                       }
                       .build()
 
@@ -920,6 +1062,13 @@ jobs:
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
                   quality = getSharedPreferences("prefs", MODE_PRIVATE).getInt("q", 2).coerceIn(0, labels.size - 1)
+                  // Warm up the download engine right away so a shared link starts without a pause.
+                  Thread {
+                      try {
+                          Engine.ensureInit(applicationContext)
+                      } catch (e: Throwable) {
+                      }
+                  }.start()
                   buildUi()
                   refreshLog()
 
@@ -1145,7 +1294,7 @@ jobs:
                   val titles = LinearLayout(this)
                   titles.orientation = LinearLayout.VERTICAL
                   titles.setPaddingRelative(dp(14), 0, 0, 0)
-                  titles.addView(label("دانلودر ویدئو", 24f, Ui.TEXT, true))
+                  titles.addView(label("Downloader", 24f, Ui.TEXT, true))
                   titles.addView(label("دانلود ساده و سریع از شبکه‌های اجتماعی", 12.5f, Ui.MUTED))
                   header.addView(titles)
                   root.addView(header, lp())
@@ -1380,6 +1529,12 @@ jobs:
               private lateinit var action: TextView
               private lateinit var bottomBar: LinearLayout
               private lateinit var empty: TextView
+              private lateinit var queueScroll: android.widget.ScrollView
+              private lateinit var queueBox: LinearLayout
+              private lateinit var queueHeader: TextView
+              private val qRows = LinkedHashMap<Long, QRow>()
+
+              class QRow(val root: LinearLayout, val title: TextView, val status: TextView, val bar: android.widget.ProgressBar)
 
               private val ui = Handler(Looper.getMainLooper())
               private val pool = Executors.newFixedThreadPool(3)
@@ -1431,8 +1586,15 @@ jobs:
               override fun onResume() {
                   super.onResume()
                   Bus.onChange = { reload() }
+                  DlQueue.onChange = { refreshQueue() }
+                  refreshQueue()
                   reload()
-              }
+                  }
+
+                  override fun onPause() {
+                  DlQueue.onChange = null
+                  super.onPause()
+                  }
 
               override fun onDestroy() {
                   pool.shutdownNow()
@@ -1475,6 +1637,21 @@ jobs:
                   action.setOnClickListener { onAction() }
                   bar.addView(action)
                   root.addView(bar)
+
+                  // ---- download queue (top of page) ----
+                  queueScroll = object : android.widget.ScrollView(this) {
+                      override fun onMeasure(w: Int, h: Int) {
+                          super.onMeasure(w, View.MeasureSpec.makeMeasureSpec(dp(300), View.MeasureSpec.AT_MOST))
+                      }
+                  }
+                  queueBox = LinearLayout(this)
+                  queueBox.orientation = LinearLayout.VERTICAL
+                  queueBox.setPadding(dp(16), dp(2), dp(16), dp(8))
+                  queueHeader = label("", 13f, Ui.MUTED, true)
+                  queueBox.addView(queueHeader)
+                  queueScroll.addView(queueBox)
+                  queueScroll.visibility = View.GONE
+                  root.addView(queueScroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
                   val frame = FrameLayout(this)
 
@@ -1536,6 +1713,104 @@ jobs:
                   root.addView(bottomBar)
 
                   setContentView(root)
+              }
+
+              // ------------------------------------------------------------------
+              private fun makeRow(item: DlItem): QRow {
+                  val row = LinearLayout(this)
+                  row.orientation = LinearLayout.HORIZONTAL
+                  row.gravity = Gravity.CENTER_VERTICAL
+                  row.background = rect(Ui.CARD, 16, Ui.CARD_STROKE, 1)
+                  row.setPadding(dp(14), dp(10), dp(8), dp(10))
+                  val rp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                  rp.topMargin = dp(8)
+                  row.layoutParams = rp
+
+                  val col = LinearLayout(this)
+                  col.orientation = LinearLayout.VERTICAL
+                  val t = label(item.title, 13f, Ui.TEXT, true)
+                  t.maxLines = 1
+                  t.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+                  col.addView(t)
+                  val st = label("", 12f, Ui.MUTED)
+                  val sp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                  sp.topMargin = dp(2)
+                  col.addView(st, sp)
+                  val bar = android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal)
+                  bar.max = 100
+                  bar.progressTintList = android.content.res.ColorStateList.valueOf(Ui.GREEN)
+                  bar.progressBackgroundTintList = android.content.res.ColorStateList.valueOf(Ui.FIELD)
+                  val bp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(6))
+                  bp.topMargin = dp(6)
+                  col.addView(bar, bp)
+                  row.addView(col, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+
+                  val x = label("✕", 16f, Ui.DANGER, true)
+                  x.gravity = Gravity.CENTER
+                  x.background = rect(Ui.FIELD, 20)
+                  x.setOnClickListener { confirmCancel(item) }
+                  val xp = LinearLayout.LayoutParams(dp(40), dp(40))
+                  xp.marginStart = dp(8)
+                  row.addView(x, xp)
+                  return QRow(row, t, st, bar)
+              }
+
+              private fun confirmCancel(item: DlItem) {
+                  AlertDialog.Builder(this)
+                      .setTitle("لغو دانلود؟")
+                      .setMessage(item.title)
+                      .setPositiveButton("لغو دانلود") { _, _ -> DlQueue.cancel(item.id) }
+                      .setNegativeButton("نه", null)
+                      .show()
+              }
+
+              private fun refreshQueue() {
+                  val snap = DlQueue.snapshot()
+                  val ids = snap.map { it.id }.toSet()
+                  val iter = qRows.entries.iterator()
+                  while (iter.hasNext()) {
+                      val e = iter.next()
+                      if (e.key !in ids) {
+                          queueBox.removeView(e.value.root)
+                          iter.remove()
+                      }
+                  }
+                  var queuedNo = 0
+                  for (item in snap) {
+                      var r = qRows[item.id]
+                      if (r == null) {
+                          r = makeRow(item)
+                          qRows[item.id] = r
+                          queueBox.addView(r.root)
+                      }
+                      r.title.text = item.title
+                      when (item.state) {
+                          0 -> {
+                              queuedNo++
+                              r.status.text = "⏳ در صف انتظار (شمارهٔ " + queuedNo + ")"
+                              r.bar.visibility = View.GONE
+                          }
+                          2 -> {
+                              r.status.text = "💾 در حال ذخیره…"
+                              r.bar.visibility = View.VISIBLE
+                              r.bar.progress = 100
+                          }
+                          else -> {
+                              r.bar.visibility = View.VISIBLE
+                              if (item.pct >= 0) r.bar.progress = item.pct
+                              val a = when {
+                                  item.total > 0 && item.pct >= 0 -> item.pct.toString() + "% • " + fmtBytes(item.done) + " از " + fmtBytes(item.total)
+                                  item.pct >= 0 -> item.pct.toString() + "%"
+                                  else -> "در حال آماده‌سازی…"
+                              }
+                              val b = listOf(item.speed, if (item.eta.isNotEmpty()) "ETA " + item.eta else "")
+                                  .filter { it.isNotEmpty() }.joinToString(" • ")
+                              r.status.text = "⬇️ " + a + (if (b.isEmpty()) "" else "\n" + b)
+                          }
+                      }
+                  }
+                  queueHeader.text = "در حال دانلود و صف (" + snap.size + ")"
+                  queueScroll.visibility = if (snap.isEmpty()) View.GONE else View.VISIBLE
               }
 
               private fun refreshBars() {
@@ -1706,11 +1981,11 @@ jobs:
                   val sel: String
                   val args: Array<String>
                   if (Build.VERSION.SDK_INT >= 29) {
-                      sel = MediaStore.MediaColumns.RELATIVE_PATH + " LIKE ?"
-                      args = arrayOf("%ShareDL/%")
+                      sel = MediaStore.MediaColumns.RELATIVE_PATH + " LIKE ? OR " + MediaStore.MediaColumns.RELATIVE_PATH + " LIKE ?"
+                      args = arrayOf("%Downloader/%", "%ShareDL/%")
                   } else {
-                      sel = MediaStore.MediaColumns.DATA + " LIKE ?"
-                      args = arrayOf("%/ShareDL/%")
+                      sel = MediaStore.MediaColumns.DATA + " LIKE ? OR " + MediaStore.MediaColumns.DATA + " LIKE ?"
+                      args = arrayOf("%/Downloader/%", "%/ShareDL/%")
                   }
                   try {
                       contentResolver.query(base, proj, sel, args, null)?.use { c ->
@@ -2065,6 +2340,7 @@ jobs:
           package com.sharedl.app
 
           import android.app.Activity
+          import android.content.Intent
           import android.content.pm.ActivityInfo
           import android.content.res.ColorStateList
           import android.content.res.Configuration
@@ -2228,6 +2504,81 @@ jobs:
               }
 
               // ---------------- playlist ----------------
+              // ---------------- delete current video ----------------
+              private var pendingDelIndex = -1
+
+              private fun confirmDeleteCurrent() {
+                  ui.removeCallbacks(hideRun)
+                  val name = titles.getOrElse(index) { "" }
+                  android.app.AlertDialog.Builder(this)
+                      .setTitle("حذف ویدئو؟")
+                      .setMessage(name + "\n\nاین فایل برای همیشه از گوشی پاک می‌شود.")
+                      .setPositiveButton("حذف") { _, _ -> deleteCurrent() }
+                      .setNegativeButton("لغو", null)
+                      .show()
+              }
+
+              private fun deleteCurrent() {
+                  if (index !in uris.indices) return
+                  val i = index
+                  val uri = Uri.parse(uris[i])
+                  try {
+                      if (contentResolver.delete(uri, null, null) > 0) {
+                          afterDelete(i)
+                      } else {
+                          Toast.makeText(this, "حذف انجام نشد", Toast.LENGTH_SHORT).show()
+                      }
+                  } catch (e: SecurityException) {
+                      var asked = false
+                      try {
+                          if (Build.VERSION.SDK_INT >= 30) {
+                              val pi = android.provider.MediaStore.createDeleteRequest(contentResolver, listOf(uri))
+                              pendingDelIndex = i
+                              startIntentSenderForResult(pi.intentSender, 40, null, 0, 0, 0)
+                              asked = true
+                          } else if (Build.VERSION.SDK_INT >= 29 && e is android.app.RecoverableSecurityException) {
+                              pendingDelIndex = i
+                              startIntentSenderForResult(e.userAction.actionIntent.intentSender, 41, null, 0, 0, 0)
+                              asked = true
+                          }
+                      } catch (e2: Exception) {
+                      }
+                      if (!asked) Toast.makeText(this, "اجازه حذف داده نشد", Toast.LENGTH_SHORT).show()
+                  } catch (e: Exception) {
+                      Toast.makeText(this, "حذف انجام نشد", Toast.LENGTH_SHORT).show()
+                  }
+              }
+
+              private fun afterDelete(i: Int) {
+                  val u = uris.toMutableList()
+                  val t = titles.toMutableList()
+                  if (i in u.indices) u.removeAt(i)
+                  if (i in t.indices) t.removeAt(i)
+                  uris = u
+                  titles = t
+                  Toast.makeText(this, "ویدئو حذف شد 🗑", Toast.LENGTH_SHORT).show()
+                  if (uris.isEmpty()) {
+                      finish()
+                      return
+                  }
+                  vv.stopPlayback()
+                  loadAt(i.coerceAtMost(uris.size - 1))
+              }
+
+              override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+                  super.onActivityResult(requestCode, resultCode, data)
+                  if ((requestCode == 40 || requestCode == 41) && resultCode == RESULT_OK && pendingDelIndex in uris.indices) {
+                      if (requestCode == 41) {
+                          try {
+                              contentResolver.delete(Uri.parse(uris[pendingDelIndex]), null, null)
+                          } catch (e: Exception) {
+                          }
+                      }
+                      afterDelete(pendingDelIndex)
+                  }
+                  pendingDelIndex = -1
+              }
+
               private fun updateNav() {
                   prevBtn.alpha = if (index > 0) 1f else 0.35f
                   nextBtn.alpha = if (index < uris.size - 1) 1f else 0.35f
@@ -2505,7 +2856,9 @@ jobs:
                   titleView.ellipsize = TextUtils.TruncateAt.END
                   titleView.gravity = Gravity.CENTER
                   top.addView(titleView, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-                  top.addView(View(this), LinearLayout.LayoutParams(dp(44), dp(44)))
+                  val trash = circle("🗑", Color.argb(70, 255, 255, 255), 16f)
+                  trash.setOnClickListener { confirmDeleteCurrent() }
+                  top.addView(trash, LinearLayout.LayoutParams(dp(44), dp(44)))
 
                   overlay.addView(
                       top,
