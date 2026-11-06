@@ -979,7 +979,7 @@ jobs:
               private fun notify(id: Int, n: android.app.Notification) {
                   try {
                       getSystemService(NotificationManager::class.java).notify(id, n)
-                  } catch (_: Throwable) {
+                  } catch (e: Throwable) {
                   }
               }
           }
