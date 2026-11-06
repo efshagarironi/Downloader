@@ -1084,6 +1084,7 @@ jobs:
           import android.graphics.Color
           import java.io.File
           import android.graphics.Typeface
+          import android.net.Uri
           import android.os.Build
           import android.os.Bundle
           import android.view.Gravity
@@ -1104,6 +1105,7 @@ jobs:
               private val chips = ArrayList<TextView>()
               private var quality = 2
               private var pendingUrl: String? = null
+              private var sharedSrc: String? = null
               private lateinit var igBtn: TextView
               private lateinit var ytBtn: TextView
               private lateinit var askSub: TextView
@@ -1149,6 +1151,7 @@ jobs:
 
                   val shared = extractShared(intent)
                   if (shared != null) {
+                      sharedSrc = sourceOf(intent, true)
                       handleShare(shared)
                   } else {
                       val p = neededPerms(true)
@@ -1173,12 +1176,28 @@ jobs:
               override fun onNewIntent(intent: Intent) {
                   super.onNewIntent(intent)
                   setIntent(intent)
-                  extractShared(intent)?.let { handleShare(it) }
+                  extractShared(intent)?.let {
+                      sharedSrc = sourceOf(intent, false)
+                      handleShare(it)
+                  }
               }
 
               override fun onDestroy() {
                   Bus.onChange = null
                   super.onDestroy()
+              }
+
+              // Package name of the app that shared the link (null when it cannot be determined).
+              private fun sourceOf(i: Intent, fresh: Boolean): String? {
+                  try {
+                      val r: Uri? = if (Build.VERSION.SDK_INT >= 33) i.getParcelableExtra(Intent.EXTRA_REFERRER, Uri::class.java)
+                      else @Suppress("DEPRECATION") i.getParcelableExtra<Uri>(Intent.EXTRA_REFERRER)
+                      val ref: Uri? = r ?: i.getStringExtra(Intent.EXTRA_REFERRER_NAME)?.let { Uri.parse(it) }
+                          ?: (if (fresh && Build.VERSION.SDK_INT >= 22) referrer else null)
+                      if (ref != null && ref.scheme == "android-app") return ref.host
+                  } catch (e: Throwable) {
+                  }
+                  return null
               }
 
               private fun extractShared(i: Intent?): String? {
@@ -1199,7 +1218,7 @@ jobs:
 
               // Shared from another app: ask for the quality (if enabled) or use the saved one.
               private fun proceedShare(url: String) {
-                  if (AskPrefs.shouldAsk(this, url)) askQuality(url) else startDownload(url, true)
+                  if (AskPrefs.shouldAsk(this, url, sharedSrc)) askQuality(url) else startDownload(url, true)
               }
 
               private fun askQuality(url: String) {
@@ -1684,10 +1703,26 @@ jobs:
                   return best
               }
 
+              fun platformForPackage(pkg: String?): Platform? {
+                  if (pkg == null) return null
+                  for (p in platforms) if (p.packages.contains(pkg)) return p
+                  return null
+              }
+
               // True when the quality must be asked before downloading this link.
-              fun shouldAsk(ctx: Context, url: String): Boolean {
-                  if (askAll(ctx)) return true
+              // srcPkg = package of the app the link was shared from (null if unknown).
+              // - Shared from a known platform app (Instagram, YouTube, ...): ONLY that platform's own
+              //   checkbox decides. "Ask for all sites" does NOT apply to apps.
+              // - Shared from a browser / other app: "Ask for all sites" applies, otherwise per-site rules.
+              fun shouldAsk(ctx: Context, url: String, srcPkg: String?): Boolean {
                   val host = hostOf(url)
+                  val srcPlat = platformForPackage(srcPkg)
+                  if (srcPlat != null) return platOn(ctx).contains(srcPlat.id)
+                  // Source unknown: a link of a known platform is treated as coming from its app.
+                  val unknownSrc = srcPkg == null
+                  val hostPlat = if (host.isEmpty()) null else platformFor(host)
+                  if (unknownSrc && hostPlat != null) return platOn(ctx).contains(hostPlat.id)
+                  if (askAll(ctx)) return true
                   if (host.isEmpty()) return false
                   val on = sitesOn(ctx)
                   for (s in sites(ctx)) {
@@ -1699,9 +1734,10 @@ jobs:
               }
 
               fun summary(ctx: Context): String {
-                  if (askAll(ctx)) return "برای همه سایت‌ها کیفیت پرسیده می‌شود"
                   val sites = sites(ctx)
                   val n = platOn(ctx).size + sitesOn(ctx).count { sites.contains(it) }
+                  if (askAll(ctx)) return if (platOn(ctx).isEmpty()) "برای همه سایت‌های مرورگر کیفیت پرسیده می‌شود"
+                  else "برای همه سایت‌های مرورگر و " + platOn(ctx).size + " اپلیکیشن کیفیت پرسیده می‌شود"
                   return if (n == 0) "هیچ موردی فعال نیست • با کیفیت پیش‌فرض دانلود می‌شود"
                   else "کیفیت برای " + n + " مورد پرسیده می‌شود • برای تنظیم بزن"
               }
@@ -1814,7 +1850,7 @@ jobs:
                   root.addView(header, rowParams(0))
 
                   val hint = tv(
-                      "فقط برای پلتفرم‌ها و سایت‌های تیک‌خورده هنگام دانلود کیفیت پرسیده می‌شود. بقیه بدون پرسش و با کیفیت پیش‌فرض دانلود می‌شوند.",
+                      "«همه سایت‌ها» فقط برای سایت‌هایی است که در مرورگر باز می‌کنی. اپلیکیشن‌های نصب‌شده (اینستاگرام، یوتیوب و...) فقط با تیک خودشان کیفیت می‌پرسند؛ بدون تیک، با کیفیت پیش‌فرض و بدون پرسش دانلود می‌شوند.",
                       12.5f, Ui.MUTED
                   )
                   hint.setPadding(0, dp(10), 0, dp(6))
@@ -1827,17 +1863,16 @@ jobs:
                   val allRow = checkRow(
                       letterIcon("∞"),
                       "پرسیدن کیفیت برای همه سایت‌ها",
-                      "با روشن‌بودن این گزینه، دانلود از هر سایتی با کیفیتی که هنگام دانلود انتخاب می‌کنی انجام می‌شود",
+                      "فقط برای سایت‌هایی که در مرورگرهای گوشی باز می‌شوند. شامل اپلیکیشن‌ها و پلتفرم‌های نصب‌شده نیست؛ آن‌ها را جداگانه در لیست پایین تیک بزن",
                       AskPrefs.askAll(this)
                   ) { c ->
                       AskPrefs.setAskAll(this, c)
-                      body.alpha = if (c) 0.45f else 1f
+                      siteBox.alpha = if (c) 0.45f else 1f
                   }
                   allRow.background = Ui.rect(this, Ui.GREEN_SEL, 16, Ui.GREEN, 1)
                   root.addView(allRow, rowParams(8))
 
                   root.addView(body, rowParams(0))
-                  body.alpha = if (AskPrefs.askAll(this)) 0.45f else 1f
 
                   // ---------- Platforms ----------
                   val t1 = tv("پلتفرم‌های ویدئویی و صوتی روی گوشی", 13.5f, Ui.GREEN, true)
@@ -1885,6 +1920,7 @@ jobs:
                   siteBox = LinearLayout(this)
                   siteBox.orientation = LinearLayout.VERTICAL
                   body.addView(siteBox, rowParams(0))
+                  siteBox.alpha = if (AskPrefs.askAll(this)) 0.45f else 1f
 
                   setContentView(page)
                   render()
