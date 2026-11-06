@@ -1936,6 +1936,8 @@ jobs:
                   lateinit var thumb: ImageView
                   lateinit var name: TextView
                   lateinit var meta: TextView
+                  lateinit var tech: TextView
+                  lateinit var date: TextView
                   lateinit var check: TextView
               }
 
@@ -1957,6 +1959,7 @@ jobs:
               private val ui = Handler(Looper.getMainLooper())
               private val pool = Executors.newFixedThreadPool(3)
               private val cache = LruCache<String, Bitmap>(80)
+              private val techCache = LruCache<String, String>(400)
               private var pendingDelete: List<Item> = emptyList()
               private val queue29 = ArrayList<Item>()
               private val prefs by lazy { getSharedPreferences("prefs", MODE_PRIVATE) }
@@ -2432,6 +2435,147 @@ jobs:
                   }
               }
 
+              // ------------------------------------------------------------------
+              private val dateFmt by lazy {
+                  android.icu.text.SimpleDateFormat("yyyy/MM/dd  HH:mm", android.icu.util.ULocale("en_US@calendar=persian"))
+              }
+
+              // Download time (Persian calendar)
+              private fun fmtDate(sec: Long): String = try {
+                  dateFmt.format(java.util.Date(sec * 1000L))
+              } catch (e: Throwable) {
+                  ""
+              }
+
+              private fun codecName(mime: String): String = when {
+                  mime.contains("avc") -> "H.264"
+                  mime.contains("hevc") -> "H.265"
+                  mime.contains("vp09") || mime.contains("vp9") -> "VP9"
+                  mime.contains("vp8") -> "VP8"
+                  mime.contains("av01") -> "AV1"
+                  mime.contains("mp4a") || mime.contains("aac") -> "AAC"
+                  mime.contains("opus") -> "Opus"
+                  mime.contains("vorbis") -> "Vorbis"
+                  mime.startsWith("audio/mpeg") -> "MP3"
+                  mime.contains("flac") -> "FLAC"
+                  mime.contains("ac3") -> "AC3"
+                  else -> mime.substringAfter('/').uppercase()
+              }
+
+              private fun fmtRate(bps: Long): String =
+                  if (bps >= 1000000L) String.format(java.util.Locale.US, "%.1f Mbps", bps / 1000000.0)
+                  else (bps / 1000L).toString() + " kbps"
+
+              private fun qualityTag(w: Int, h: Int): String {
+                  val m = minOf(w, h)
+                  return when {
+                      m >= 2100 -> "4K"
+                      m >= 1400 -> "2K"
+                      m >= 1060 -> "FHD"
+                      m >= 700 -> "HD"
+                      else -> ""
+                  }
+              }
+
+              private fun intOf(f: android.media.MediaFormat, key: String): Int {
+                  if (!f.containsKey(key)) return 0
+                  return try {
+                      f.getInteger(key)
+                  } catch (e: Throwable) {
+                      try {
+                          f.getFloat(key).toInt()
+                      } catch (e2: Throwable) {
+                          0
+                      }
+                  }
+              }
+
+              // Reads codec / resolution / bitrate info of a downloaded file (runs on a background thread)
+              private fun probe(item: Item): String {
+                  var vw = 0
+                  var vh = 0
+                  var fps = 0
+                  var vc = ""
+                  var vb = 0L
+                  var ac = ""
+                  var ab = 0L
+                  var ar = 0
+                  var ach = 0
+                  val ex = android.media.MediaExtractor()
+                  try {
+                      ex.setDataSource(this, item.uri, null)
+                      for (i in 0 until ex.trackCount) {
+                          val f = ex.getTrackFormat(i)
+                          val mime = f.getString(android.media.MediaFormat.KEY_MIME) ?: continue
+                          if (mime.startsWith("video/") && vc.isEmpty()) {
+                              vc = codecName(mime)
+                              vw = intOf(f, android.media.MediaFormat.KEY_WIDTH)
+                              vh = intOf(f, android.media.MediaFormat.KEY_HEIGHT)
+                              val rot = intOf(f, "rotation-degrees")
+                              if (rot % 180 != 0) {
+                                  val t = vw
+                                  vw = vh
+                                  vh = t
+                              }
+                              fps = intOf(f, android.media.MediaFormat.KEY_FRAME_RATE)
+                              vb = intOf(f, android.media.MediaFormat.KEY_BIT_RATE).toLong()
+                          } else if (mime.startsWith("audio/") && ac.isEmpty()) {
+                              ac = codecName(mime)
+                              ab = intOf(f, android.media.MediaFormat.KEY_BIT_RATE).toLong()
+                              ar = intOf(f, android.media.MediaFormat.KEY_SAMPLE_RATE)
+                              ach = intOf(f, android.media.MediaFormat.KEY_CHANNEL_COUNT)
+                          }
+                      }
+                  } catch (e: Throwable) {
+                  } finally {
+                      try {
+                          ex.release()
+                      } catch (e: Throwable) {
+                      }
+                  }
+
+                  var overall = 0L
+                  val r = MediaMetadataRetriever()
+                  try {
+                      r.setDataSource(this, item.uri)
+                      overall = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toLongOrNull() ?: 0L
+                  } catch (e: Throwable) {
+                  } finally {
+                      try {
+                          r.release()
+                      } catch (e: Throwable) {
+                      }
+                  }
+                  if (overall <= 0L && item.duration > 0) overall = item.size * 8000L / item.duration
+                  if (vc.isNotEmpty() && vb <= 0L && overall > 0L) vb = if (ab > 0L) (overall - ab).coerceAtLeast(0L) else overall
+                  if (vc.isEmpty() && ac.isNotEmpty() && ab <= 0L) ab = overall
+
+                  val lines = ArrayList<String>()
+                  if (vc.isNotEmpty()) {
+                      val v = ArrayList<String>()
+                      if (vw > 0 && vh > 0) v.add(vw.toString() + "×" + vh)
+                      val q = qualityTag(vw, vh)
+                      if (q.isNotEmpty()) v.add(q)
+                      v.add(vc)
+                      if (fps > 0) v.add(fps.toString() + "fps")
+                      if (vb > 0L) v.add(fmtRate(vb))
+                      lines.add("🎞 " + v.joinToString(" • "))
+                  }
+                  if (ac.isNotEmpty()) {
+                      val a = ArrayList<String>()
+                      a.add(ac)
+                      if (ab > 0L) a.add(fmtRate(ab))
+                      if (ar > 0) a.add((if (ar % 1000 == 0) (ar / 1000).toString() else String.format(java.util.Locale.US, "%.1f", ar / 1000.0)) + " kHz")
+                      if (ach > 0) a.add(when (ach) {
+                          1 -> "مونو"
+                          2 -> "استریو"
+                          else -> ach.toString() + " کانال"
+                      })
+                      lines.add("🔊 " + a.joinToString(" • "))
+                  }
+                  return lines.joinToString("\n")
+              }
+
               private fun clean(name: String): String =
                   name.substringBeforeLast('.').replace(Regex("\\s*\\[(?=[^\\]]*\\d)[\\w-]{6,}\\]\\s*\$"), "")
 
@@ -2494,6 +2638,15 @@ jobs:
                   val mp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                   mp.topMargin = dp(6)
                   col.addView(meta, mp)
+                  val tech = label("", 12f, Ui.MUTED)
+                  tech.visibility = View.GONE
+                  val tp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                  tp.topMargin = dp(3)
+                  col.addView(tech, tp)
+                  val date = label("", 11.5f, Ui.MUTED)
+                  val dpp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                  dpp.topMargin = dp(3)
+                  col.addView(date, dpp)
                   row.addView(col, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
 
                   val check = label("", 14f, Color.WHITE, true)
@@ -2505,6 +2658,8 @@ jobs:
                   h.thumb = thumb
                   h.name = name
                   h.meta = meta
+                  h.tech = tech
+                  h.date = date
                   h.check = check
                   return row
               }
@@ -2522,6 +2677,27 @@ jobs:
                   if (item.duration > 0) parts.add(Ui.dur(item.duration))
                   if (!item.video) parts.add(item.name.substringAfterLast('.', "").uppercase())
                   h.meta.text = parts.joinToString("  •  ")
+                  h.date.text = "📅 " + fmtDate(item.added)
+
+                  h.tech.tag = item.key
+                  val tx = techCache.get(item.key)
+                  if (tx != null) {
+                      h.tech.text = tx
+                      h.tech.visibility = if (tx.isEmpty()) View.GONE else View.VISIBLE
+                  } else {
+                      h.tech.text = ""
+                      h.tech.visibility = View.GONE
+                      pool.execute {
+                          val t = probe(item)
+                          techCache.put(item.key, t)
+                          ui.post {
+                              if (h.tech.tag == item.key && t.isNotEmpty()) {
+                                  h.tech.text = t
+                                  h.tech.visibility = View.VISIBLE
+                              }
+                          }
+                      }
+                  }
 
                   h.check.visibility = if (selecting) View.VISIBLE else View.GONE
                   if (sel) {
