@@ -3306,6 +3306,19 @@ jobs:
                   refreshInsta()
                   refreshYt()
 
+                  // App version at the bottom of the page
+                  var verText = ""
+                  try {
+                      val pi = packageManager.getPackageInfo(packageName, 0)
+                      val code = if (android.os.Build.VERSION.SDK_INT >= 28) pi.longVersionCode else @Suppress("DEPRECATION") pi.versionCode.toLong()
+                      verText = "نسخه‌ی برنامه: " + pi.versionName + " (ساخت " + code + ")"
+                  } catch (e: Exception) {
+                  }
+                  val ver = tv(verText, 12f, Ui.MUTED)
+                  ver.gravity = Gravity.CENTER
+                  ver.setPadding(0, dp(10), 0, dp(14))
+                  root.addView(ver, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+
                   setContentView(root)
               }
 
@@ -5527,6 +5540,9 @@ jobs:
                   val b = android.hardware.biometrics.BiometricPrompt.Builder(this)
                       .setTitle("باز کردن قفل برنامه")
                       .setNegativeButton("استفاده از رمز یا الگو", mainExecutor, DialogInterface.OnClickListener { _, _ -> bioActive = false })
+                  if (Build.VERSION.SDK_INT >= 29) {
+                      b.setConfirmationRequired(false)
+                  }
                   if (Build.VERSION.SDK_INT >= 30) {
                       b.setAllowedAuthenticators(android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK)
                   }
