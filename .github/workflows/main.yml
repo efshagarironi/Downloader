@@ -424,7 +424,7 @@ jobs:
                   if (Regex("(youtube\\.com|youtu\\.be|youtube-nocookie\\.com)", RegexOption.IGNORE_CASE).containsMatchIn(url)) {
                       req.addOption("--http-chunk-size", "10M")
                   }
-                  req.addOption("-o", dir.absolutePath + "/%(title).80s [%(id)s].%(ext)s")
+                  req.addOption("-o", dir.absolutePath + "/%(title).120s.%(ext)s")
                   val igCookies = File(filesDir, "ig_cookies.txt")
                   if (igCookies.exists() && Regex("instagram\\.com", RegexOption.IGNORE_CASE).containsMatchIn(url)) {
                       req.addOption("--cookies", igCookies.absolutePath)
@@ -578,7 +578,7 @@ jobs:
                       notify(1, buildNotif("در حال ذخیره…", -1, true))
                       val saved = saveToPublic(f)
                       Bus.post("✅ ذخیره شد: " + f.name)
-                      val title = f.name.substringBeforeLast('.').replace(Regex("\\s*\\[[^\\]]*\\]\\s*\$"), "")
+                      val title = f.name.substringBeforeLast('.').replace(Regex("\\s*\\[(?=[^\\]]*\\d)[\\w-]{6,}\\]\\s*\$"), "")
                       notify(nid.incrementAndGet(), buildNotif("✅ " + f.name, -1, false, openIntent(saved, title)))
                   }
                   dir.deleteRecursively()
@@ -825,8 +825,13 @@ jobs:
                       )
                       val target = File(base, "Downloader")
                       target.mkdirs()
-                      val out = File(target, file.name)
-                      file.copyTo(out, overwrite = true)
+                      var out = File(target, file.name)
+                      var n = 1
+                      while (out.exists()) {
+                          out = File(target, file.name.substringBeforeLast('.') + " (" + n + ")." + file.extension)
+                          n++
+                      }
+                      file.copyTo(out, overwrite = false)
                       MediaScannerConnection.scanFile(this, arrayOf(out.absolutePath), arrayOf(mime), null)
                       return Uri.fromFile(out)
                   }
@@ -844,7 +849,7 @@ jobs:
                   val dm = destRe.find(line)
                   if (dm != null) {
                       val base = File(dm.groupValues[1]).name.substringBeforeLast('.')
-                      val t = base.replace(Regex("\\s*\\[[^\\]]*\\]\\s*\$"), "")
+                      val t = base.replace(Regex("\\s*\\[(?=[^\\]]*\\d)[\\w-]{6,}\\]\\s*\$"), "")
                       if (t.isNotBlank()) item.title = t
                   }
                   val m = sizeRe.find(line)
@@ -2030,7 +2035,7 @@ jobs:
               }
 
               private fun clean(name: String): String =
-                  name.substringBeforeLast('.').replace(Regex("\\s*\\[[^\\]]*\\]\\s*\$"), "")
+                  name.substringBeforeLast('.').replace(Regex("\\s*\\[(?=[^\\]]*\\d)[\\w-]{6,}\\]\\s*\$"), "")
 
               // ------------------------------------------------------------------
               private fun makeThumb(item: Item): Bitmap? {
