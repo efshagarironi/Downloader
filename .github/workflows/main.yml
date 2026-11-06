@@ -1106,9 +1106,6 @@ jobs:
               private var quality = 2
               private var pendingUrl: String? = null
               private var sharedSrc: String? = null
-              private lateinit var igBtn: TextView
-              private lateinit var ytBtn: TextView
-              private lateinit var askSub: TextView
 
               private val modes = listOf("best", "1080", "720", "480", "360", "audio")
               private val labels = listOf("بهترین کیفیت", "1080p", "720p", "480p", "360p", "فقط صدا (MP3)")
@@ -1164,13 +1161,6 @@ jobs:
                   super.onResume()
                   Bus.onChange = { refreshLog() }
                   refreshLog()
-                  refreshInsta()
-                  refreshYt()
-                  refreshAskSub()
-              }
-
-              private fun refreshAskSub() {
-                  askSub.text = AskPrefs.summary(this)
               }
 
               override fun onNewIntent(intent: Intent) {
@@ -1284,57 +1274,6 @@ jobs:
               private fun autoUpdate() {
                   val last = getSharedPreferences("prefs", MODE_PRIVATE).getLong("lastUpdate", 0L)
                   if (System.currentTimeMillis() - last > 24L * 3600L * 1000L) updateEngine()
-              }
-
-              private fun refreshInsta() {
-                  val on = getSharedPreferences("prefs", MODE_PRIVATE).getBoolean("igLogin", false)
-                  igBtn.text = if (on) "✅ وارد اینستاگرام شده‌ای — خروج" else "🔑 ورود به اینستاگرام (برای پست‌های محدود)"
-                  igBtn.setTextColor(if (on) Ui.GREEN else Ui.MUTED)
-              }
-
-              private fun onInstaClick() {
-                  val on = getSharedPreferences("prefs", MODE_PRIVATE).getBoolean("igLogin", false)
-                  if (on) {
-                      AlertDialog.Builder(this)
-                          .setTitle("خروج از اینستاگرام؟")
-                          .setMessage("نشست ذخیره‌شده پاک می‌شود.")
-                          .setPositiveButton("خروج") { _, _ -> logoutInsta() }
-                          .setNegativeButton("لغو", null)
-                          .show()
-                  } else {
-                      startActivity(Intent(this, InstaLoginActivity::class.java))
-                  }
-              }
-
-              private fun logoutInsta() {
-                  File(filesDir, "ig_cookies.txt").delete()
-                  getSharedPreferences("prefs", MODE_PRIVATE).edit().remove("igCookie").putBoolean("igLogin", false).apply()
-                  android.webkit.CookieManager.getInstance().removeAllCookies(null)
-                  android.webkit.CookieManager.getInstance().flush()
-                  refreshInsta()
-              }
-
-              private fun refreshYt() {
-                  val on = File(filesDir, "yt_cookies.txt").exists()
-                  ytBtn.text = if (on) "✅ وارد یوتیوب شده‌ای — خروج" else "🔑 ورود به یوتیوب (رفع خطای ربات)"
-                  ytBtn.setTextColor(if (on) Ui.GREEN else Ui.MUTED)
-              }
-
-              private fun onYtClick() {
-                  if (File(filesDir, "yt_cookies.txt").exists()) {
-                      AlertDialog.Builder(this)
-                          .setTitle("خروج از یوتیوب؟")
-                          .setMessage("نشست ذخیره‌شده پاک می‌شود.")
-                          .setPositiveButton("خروج") { _, _ ->
-                              File(filesDir, "yt_cookies.txt").delete()
-                              getSharedPreferences("prefs", MODE_PRIVATE).edit().putBoolean("ytLogin", false).apply()
-                              refreshYt()
-                          }
-                          .setNegativeButton("لغو", null)
-                          .show()
-                  } else {
-                      startActivity(Intent(this, YoutubeLoginActivity::class.java))
-                  }
               }
 
               private fun refreshLog() {
@@ -1480,57 +1419,6 @@ jobs:
                   card.addView(dl, dlp)
 
                   root.addView(card, lp())
-
-                  // ---------- Ask quality card ----------
-                  val askCard = LinearLayout(this)
-                  askCard.orientation = LinearLayout.HORIZONTAL
-                  askCard.gravity = Gravity.CENTER_VERTICAL
-                  askCard.setPadding(dp(16), dp(14), dp(16), dp(14))
-                  val askBg = grad(Ui.GREEN_SEL, Color.parseColor("#17304F"), 22)
-                  askBg.setStroke(dp(1), Ui.GREEN)
-                  askCard.background = askBg
-                  askCard.elevation = dp(3).toFloat()
-                  askCard.isClickable = true
-                  askCard.setOnClickListener {
-                      startActivity(Intent(this, QualitySettingsActivity::class.java))
-                  }
-
-                  val askIc = label("🎚", 22f, Color.WHITE)
-                  askIc.gravity = Gravity.CENTER
-                  askIc.background = Ui.oval(Color.argb(45, 34, 197, 94))
-                  askCard.addView(askIc, LinearLayout.LayoutParams(dp(48), dp(48)))
-
-                  val askTxt = LinearLayout(this)
-                  askTxt.orientation = LinearLayout.VERTICAL
-                  askTxt.setPaddingRelative(dp(12), 0, dp(8), 0)
-                  askTxt.addView(label("پرسیدن کیفیت هنگام اشتراک‌گذاری از برنامه‌های دیگر", 14.5f, Ui.TEXT, true))
-                  askSub = label("", 12f, Ui.MUTED)
-                  askSub.setPadding(0, dp(3), 0, 0)
-                  askTxt.addView(askSub)
-                  askCard.addView(askTxt, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-                  askCard.addView(label("‹", 28f, Ui.GREEN, true))
-                  root.addView(askCard, lp(16))
-                  refreshAskSub()
-
-                  // ---------- Instagram login ----------
-                  igBtn = label("", 13f, Ui.MUTED, true)
-                  igBtn.gravity = Gravity.CENTER
-                  igBtn.background = rect(Color.TRANSPARENT, 16, Ui.CARD_STROKE, 1)
-                  igBtn.setOnClickListener { onInstaClick() }
-                  val igp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(46))
-                  igp.topMargin = dp(10)
-                  root.addView(igBtn, igp)
-                  refreshInsta()
-
-                  // ---------- YouTube login ----------
-                  ytBtn = label("", 13f, Ui.MUTED, true)
-                  ytBtn.gravity = Gravity.CENTER
-                  ytBtn.background = rect(Color.TRANSPARENT, 16, Ui.CARD_STROKE, 1)
-                  ytBtn.setOnClickListener { onYtClick() }
-                  val ytp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(46))
-                  ytp.topMargin = dp(10)
-                  root.addView(ytBtn, ytp)
-                  refreshYt()
 
                   // ---------- Downloaded files card ----------
                   val files = LinearLayout(this)
@@ -1844,7 +1732,7 @@ jobs:
                   back.gravity = Gravity.CENTER
                   back.setOnClickListener { finish() }
                   header.addView(back, LinearLayout.LayoutParams(dp(44), dp(44)))
-                  val ttl = tv("پرسیدن کیفیت هنگام دانلود", 19f, Ui.TEXT, true)
+                  val ttl = tv("کیفیت دلخواه", 19f, Ui.TEXT, true)
                   ttl.setPaddingRelative(dp(8), 0, 0, 0)
                   header.addView(ttl)
                   root.addView(header, rowParams(0))
@@ -2874,6 +2762,8 @@ jobs:
           import android.os.Bundle
           import android.view.Gravity
           import android.view.View
+          import android.app.AlertDialog
+          import java.io.File
           import android.widget.LinearLayout
           import android.widget.ScrollView
           import android.widget.TextView
@@ -2991,6 +2881,10 @@ jobs:
           // ---------------------------------------------------------------------------
           class MenuActivity : Activity() {
 
+              private lateinit var qualitySub: TextView
+              private lateinit var igBtn: TextView
+              private lateinit var ytBtn: TextView
+
               private fun dp(x: Int) = Ui.dp(this, x)
 
               private fun tv(s: String, size: Float, color: Int, bold: Boolean = false): TextView {
@@ -3000,6 +2894,64 @@ jobs:
                   t.setTextColor(color)
                   if (bold) t.setTypeface(t.typeface, Typeface.BOLD)
                   return t
+              }
+
+              override fun onResume() {
+                  super.onResume()
+                  qualitySub.text = AskPrefs.summary(this)
+                  refreshInsta()
+                  refreshYt()
+              }
+
+              private fun refreshInsta() {
+                  val on = getSharedPreferences("prefs", MODE_PRIVATE).getBoolean("igLogin", false)
+                  igBtn.text = if (on) "✅ وارد اینستاگرام شده‌ای — خروج" else "🔑 ورود به اینستاگرام (برای پست‌های محدود)"
+                  igBtn.setTextColor(if (on) Ui.GREEN else Ui.MUTED)
+              }
+
+              private fun onInstaClick() {
+                  val on = getSharedPreferences("prefs", MODE_PRIVATE).getBoolean("igLogin", false)
+                  if (on) {
+                      AlertDialog.Builder(this)
+                          .setTitle("خروج از اینستاگرام؟")
+                          .setMessage("نشست ذخیره‌شده پاک می‌شود.")
+                          .setPositiveButton("خروج") { _, _ -> logoutInsta() }
+                          .setNegativeButton("لغو", null)
+                          .show()
+                  } else {
+                      startActivity(Intent(this, InstaLoginActivity::class.java))
+                  }
+              }
+
+              private fun logoutInsta() {
+                  File(filesDir, "ig_cookies.txt").delete()
+                  getSharedPreferences("prefs", MODE_PRIVATE).edit().remove("igCookie").putBoolean("igLogin", false).apply()
+                  android.webkit.CookieManager.getInstance().removeAllCookies(null)
+                  android.webkit.CookieManager.getInstance().flush()
+                  refreshInsta()
+              }
+
+              private fun refreshYt() {
+                  val on = File(filesDir, "yt_cookies.txt").exists()
+                  ytBtn.text = if (on) "✅ وارد یوتیوب شده‌ای — خروج" else "🔑 ورود به یوتیوب (رفع خطای ربات)"
+                  ytBtn.setTextColor(if (on) Ui.GREEN else Ui.MUTED)
+              }
+
+              private fun onYtClick() {
+                  if (File(filesDir, "yt_cookies.txt").exists()) {
+                      AlertDialog.Builder(this)
+                          .setTitle("خروج از یوتیوب؟")
+                          .setMessage("نشست ذخیره‌شده پاک می‌شود.")
+                          .setPositiveButton("خروج") { _, _ ->
+                              File(filesDir, "yt_cookies.txt").delete()
+                              getSharedPreferences("prefs", MODE_PRIVATE).edit().putBoolean("ytLogin", false).apply()
+                              refreshYt()
+                          }
+                          .setNegativeButton("لغو", null)
+                          .show()
+                  } else {
+                      startActivity(Intent(this, YoutubeLoginActivity::class.java))
+                  }
               }
 
               override fun onCreate(savedInstanceState: Bundle?) {
@@ -3031,7 +2983,7 @@ jobs:
                   scroll.addView(body)
                   root.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
-                  fun menuItem(title: String, subText: String, cls: Class<*>, top: Int) {
+                  fun menuItem(title: String, subText: String, cls: Class<*>, top: Int): TextView {
                       val item = LinearLayout(this)
                       item.orientation = LinearLayout.HORIZONTAL
                       item.gravity = Gravity.CENTER_VERTICAL
@@ -3040,7 +2992,9 @@ jobs:
                       bg.setStroke(dp(1), Ui.GREEN)
                       item.background = bg
                       item.isClickable = true
-                      item.setOnClickListener { Nav.open(this, cls) }
+                      item.setOnClickListener {
+                          if (cls == QualitySettingsActivity::class.java) startActivity(Intent(this, cls)) else Nav.open(this, cls)
+                      }
 
                       val ic = tv("🎚", 22f, Color.WHITE)
                       ic.gravity = Gravity.CENTER
@@ -3060,10 +3014,32 @@ jobs:
                       val p = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                       p.topMargin = dp(top)
                       body.addView(item, p)
+                      return sub
                   }
 
                   menuItem("نوار بالا", "اندازه، جای آیکون‌ها و فاصله بین آنها در نوار بالای پخش‌کننده", BarSettingsActivity::class.java, 0)
                   menuItem("نوار پایین", "اندازه و جای جداگانه آیکون‌های پخش، قبلی و بعدی و فاصله بین آنها", BottomBarSettingsActivity::class.java, 14)
+                  qualitySub = menuItem("کیفیت دلخواه", "", QualitySettingsActivity::class.java, 14)
+                  qualitySub.text = AskPrefs.summary(this)
+
+                  igBtn = tv("", 13f, Ui.MUTED, true)
+                  igBtn.gravity = Gravity.CENTER
+                  igBtn.background = Ui.rect(this, Color.TRANSPARENT, 16, Ui.CARD_STROKE, 1)
+                  igBtn.setOnClickListener { onInstaClick() }
+                  val igp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(46))
+                  igp.topMargin = dp(14)
+                  body.addView(igBtn, igp)
+
+                  ytBtn = tv("", 13f, Ui.MUTED, true)
+                  ytBtn.gravity = Gravity.CENTER
+                  ytBtn.background = Ui.rect(this, Color.TRANSPARENT, 16, Ui.CARD_STROKE, 1)
+                  ytBtn.setOnClickListener { onYtClick() }
+                  val ytp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(46))
+                  ytp.topMargin = dp(10)
+                  body.addView(ytBtn, ytp)
+
+                  refreshInsta()
+                  refreshYt()
 
                   setContentView(root)
               }
