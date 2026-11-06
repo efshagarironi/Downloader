@@ -2355,11 +2355,15 @@ jobs:
           package com.sharedl.app
 
           import android.app.Activity
+          import android.content.Context
           import android.content.Intent
           import android.content.pm.ActivityInfo
           import android.content.res.ColorStateList
           import android.content.res.Configuration
+          import android.graphics.Canvas
           import android.graphics.Color
+          import android.graphics.Paint
+          import android.graphics.Path
           import android.graphics.Typeface
           import android.graphics.drawable.GradientDrawable
           import android.media.AudioManager
@@ -2384,6 +2388,85 @@ jobs:
           import android.widget.TextView
           import android.widget.Toast
           import android.widget.VideoView
+
+          class RepeatIconView(ctx: Context) : View(ctx) {
+              // 0 = repeat playlist (A), 1 = repeat one (1), 2 = play playlist once (A ->), 3 = off (empty loop)
+              var mode = 3
+                  set(v) {
+                      field = v
+                      invalidate()
+                  }
+
+              private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                  color = Color.WHITE
+                  style = Paint.Style.STROKE
+                  strokeWidth = 1.9f
+                  strokeCap = Paint.Cap.ROUND
+                  strokeJoin = Paint.Join.ROUND
+              }
+              private val txt = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                  color = Color.WHITE
+                  textAlign = Paint.Align.CENTER
+                  typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+              }
+
+              private fun arrowRight(c: Canvas, x: Float, y: Float) {
+                  val p = Path()
+                  p.moveTo(x - 3.2f, y - 3.2f)
+                  p.lineTo(x, y)
+                  p.lineTo(x - 3.2f, y + 3.2f)
+                  c.drawPath(p, line)
+              }
+
+              private fun arrowLeft(c: Canvas, x: Float, y: Float) {
+                  val p = Path()
+                  p.moveTo(x + 3.2f, y - 3.2f)
+                  p.lineTo(x, y)
+                  p.lineTo(x + 3.2f, y + 3.2f)
+                  c.drawPath(p, line)
+              }
+
+              private fun glyph(c: Canvas, g: String, cx: Float, cy: Float, size: Float) {
+                  txt.textSize = size
+                  val fm = txt.fontMetrics
+                  c.drawText(g, cx, cy - (fm.ascent + fm.descent) / 2f, txt)
+              }
+
+              override fun onDraw(c: Canvas) {
+                  val s = minOf(width, height) / 24f
+                  c.save()
+                  c.translate((width - 24f * s) / 2f, (height - 24f * s) / 2f)
+                  c.scale(s, s)
+                  if (mode == 2) {
+                      glyph(c, "A", 12f, 8.5f, 12f)
+                      c.drawLine(3f, 17.5f, 20.5f, 17.5f, line)
+                      arrowRight(c, 20.5f, 17.5f)
+                  } else {
+                      val l = 3f
+                      val r = 21f
+                      val t = 6f
+                      val b = 18f
+                      val rad = 3.5f
+                      val top = Path()
+                      top.moveTo(l, b - 4f)
+                      top.lineTo(l, t + rad)
+                      top.quadTo(l, t, l + rad, t)
+                      top.lineTo(r + 1f, t)
+                      c.drawPath(top, line)
+                      arrowRight(c, r + 1f, t)
+                      val bot = Path()
+                      bot.moveTo(r, t + 4f)
+                      bot.lineTo(r, b - rad)
+                      bot.quadTo(r, b, r - rad, b)
+                      bot.lineTo(l - 1f, b)
+                      c.drawPath(bot, line)
+                      arrowLeft(c, l - 1f, b)
+                      if (mode == 0) glyph(c, "A", 12f, 12f, 9.5f)
+                      if (mode == 1) glyph(c, "1", 12f, 12f, 9.5f)
+                  }
+                  c.restore()
+              }
+          }
 
           class PlayerActivity : Activity() {
 
@@ -2444,7 +2527,7 @@ jobs:
               private var quietLoad = false
               // repeat: 0 = repeat playlist, 1 = repeat one video, 2 = play playlist once, 3 = off (play this video once)
               private var repeatMode = 3
-              private lateinit var repeatBtn: TextView
+              private lateinit var repeatBtn: RepeatIconView
               private var bottomBarView: View? = null
               private val hideArrow = Runnable { edgeArrow.visibility = View.GONE }
 
@@ -2481,6 +2564,22 @@ jobs:
                   t.setTypeface(t.typeface, Typeface.BOLD)
                   t.background = Ui.oval(fill)
                   return t
+              }
+
+              private fun plainIcon(s: String, sp: Float): TextView {
+                  val t = TextView(this)
+                  t.text = s
+                  t.textSize = sp
+                  t.setTextColor(Color.WHITE)
+                  t.gravity = Gravity.CENTER
+                  return t
+              }
+
+              private fun topLp(): LinearLayout.LayoutParams {
+                  val p = LinearLayout.LayoutParams(dp(48), dp(48))
+                  p.marginStart = dp(6)
+                  p.marginEnd = dp(6)
+                  return p
               }
 
               private fun iconBtn(res: Int): ImageView {
@@ -2603,12 +2702,7 @@ jobs:
               }
 
               private fun updateRepeatIcon() {
-                  repeatBtn.text = when (repeatMode) {
-                      0 -> "🔁"
-                      1 -> "🔂"
-                      2 -> "➡️"
-                      else -> "🔁"
-                  }
+                  repeatBtn.mode = repeatMode
                   repeatBtn.alpha = if (repeatMode == 3) 0.45f else 1f
               }
 
@@ -2620,13 +2714,6 @@ jobs:
                   } catch (e: Exception) {
                   }
                   updateRepeatIcon()
-                  val msg = when (repeatMode) {
-                      0 -> "تکرار لیست پخش"
-                      1 -> "تکرار یک ویدئو"
-                      2 -> "پخش لیست فقط یک بار"
-                      else -> "خاموش: فقط همین ویدئو یک بار پخش می‌شود"
-                  }
-                  Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
                   showOverlay()
               }
 
@@ -2923,7 +3010,7 @@ jobs:
                   top.setPadding(dp(10), dp(12), dp(10), dp(28))
                   top.background = shade(true)
 
-                  val rot = circle("🔄", Color.argb(70, 255, 255, 255), 16f)
+                  val rot = plainIcon("🔄", 22f)
                   rot.setOnClickListener {
                       requestedOrientation =
                           if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE)
@@ -2932,11 +3019,12 @@ jobs:
                               ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
                       showOverlay()
                   }
-                  top.addView(rot, LinearLayout.LayoutParams(dp(44), dp(44)))
+                  top.addView(rot, topLp())
 
-                  repeatBtn = circle("🔁", Color.argb(70, 255, 255, 255), 16f)
+                  repeatBtn = RepeatIconView(this)
+                  repeatBtn.setPadding(dp(9), dp(9), dp(9), dp(9))
                   repeatBtn.setOnClickListener { cycleRepeat() }
-                  top.addView(repeatBtn, LinearLayout.LayoutParams(dp(44), dp(44)))
+                  top.addView(repeatBtn, topLp())
                   updateRepeatIcon()
 
                   titleView = TextView(this)
@@ -2947,9 +3035,9 @@ jobs:
                   titleView.ellipsize = TextUtils.TruncateAt.END
                   titleView.gravity = Gravity.CENTER
                   top.addView(titleView, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-                  val trash = circle("🗑", Color.argb(70, 255, 255, 255), 16f)
+                  val trash = plainIcon("🗑", 22f)
                   trash.setOnClickListener { confirmDeleteCurrent() }
-                  top.addView(trash, LinearLayout.LayoutParams(dp(44), dp(44)))
+                  top.addView(trash, topLp())
 
                   overlay.addView(
                       top,
