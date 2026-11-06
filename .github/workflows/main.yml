@@ -2439,6 +2439,10 @@ jobs:
               private val hideGSeek = Runnable { gSeek.visibility = View.GONE }
               private val hideVol = Runnable { volBar.visibility = View.GONE }
               private val tapRun = Runnable { toggleOverlay() }
+              private lateinit var edgeArrow: TextView
+              private var lastTapZone = 0
+              private var bottomBarView: View? = null
+              private val hideArrow = Runnable { edgeArrow.visibility = View.GONE }
 
               private val tickRun = object : Runnable {
                   override fun run() {
@@ -2673,6 +2677,26 @@ jobs:
                   seekWasPlaying = false
               }
 
+              // The volume gesture only works above the bottom controls.
+              private fun zoneTop(h: Int): Int = h - Math.max(bottomBarView?.height ?: 0, dp(130))
+
+              // 1 = right edge, -1 = left edge, 0 = the rest of the screen
+              private fun tapZone(x: Float, w: Int): Int = when {
+                  x > w * 0.7f -> 1
+                  x < w * 0.3f -> -1
+                  else -> 0
+              }
+
+              private fun showEdgeArrow(right: Boolean) {
+                  val lp = edgeArrow.layoutParams as FrameLayout.LayoutParams
+                  lp.gravity = (if (right) Gravity.RIGHT else Gravity.LEFT) or Gravity.CENTER_VERTICAL
+                  edgeArrow.layoutParams = lp
+                  edgeArrow.text = if (right) "❯" else "❮"
+                  edgeArrow.visibility = View.VISIBLE
+                  ui.removeCallbacks(hideArrow)
+                  ui.postDelayed(hideArrow, 450)
+              }
+
               private fun togglePlay() {
                   if (vv.isPlaying) {
                       vv.pause()
@@ -2724,7 +2748,7 @@ jobs:
                           val dx = e.x - downX
                           val dy = e.y - downY
                           if (mode == 0 && (Math.abs(dx) > slop || Math.abs(dy) > slop)) {
-                              mode = if (Math.abs(dx) >= Math.abs(dy)) 1 else 2
+                              mode = if (Math.abs(dx) >= Math.abs(dy)) 1 else if (downY < zoneTop(h)) 2 else 3
                               ui.removeCallbacks(hideRun)
                               ui.removeCallbacks(tapRun)
                               lastTapAt = 0L
@@ -2745,7 +2769,7 @@ jobs:
                               if (d > 0) scrubTo(seekTarget)
                           } else if (mode == 2) {
                               val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-                              val v = Math.round(startVol + (-dy / Math.max(h, 1)) * max * 2.4f).coerceIn(0, max)
+                              val v = Math.round(startVol + (-(Math.min(e.y, zoneTop(h).toFloat()) - downY) / Math.max(zoneTop(h), 1)) * max * 2.4f).coerceIn(0, max)
                               audio.setStreamVolume(AudioManager.STREAM_MUSIC, v, 0)
                               showVol(v.toFloat() / Math.max(max, 1), volLeft)
                           }
@@ -2761,12 +2785,24 @@ jobs:
                               if (mode == 0) {
                                   val now = SystemClock.uptimeMillis()
                                   val dt = ViewConfiguration.getDoubleTapTimeout()
-                                  if (lastTapAt != 0L && now - lastTapAt <= dt) {
+                                  val zone = tapZone(e.x, w)
+                                  if (lastTapAt != 0L && now - lastTapAt <= dt && zone == lastTapZone) {
                                       lastTapAt = 0L
                                       ui.removeCallbacks(tapRun)
-                                      togglePlay()
+                                      when (zone) {
+                                          1 -> {
+                                              showEdgeArrow(true)
+                                              goNext()
+                                          }
+                                          -1 -> {
+                                              showEdgeArrow(false)
+                                              goPrev()
+                                          }
+                                          else -> togglePlay()
+                                      }
                                   } else {
                                       lastTapAt = now
+                                      lastTapZone = zone
                                       ui.postDelayed(tapRun, dt.toLong())
                                   }
                               } else if (mode == 1) {
@@ -2889,6 +2925,7 @@ jobs:
                   bottom.orientation = LinearLayout.VERTICAL
                   bottom.setPadding(dp(16), dp(28), dp(16), dp(16))
                   bottom.background = shade(false)
+                  bottomBarView = bottom
 
                   val timeRow = LinearLayout(this)
                   timeRow.orientation = LinearLayout.HORIZONTAL
@@ -3012,6 +3049,16 @@ jobs:
                   val vbLp = FrameLayout.LayoutParams(dp(8), dp(160), Gravity.LEFT or Gravity.CENTER_VERTICAL)
                   vbLp.setMargins(dp(24), 0, dp(24), 0)
                   root.addView(volBar, vbLp)
+
+                  // ---- single arrow shown on double tap at the left/right edge ----
+                  edgeArrow = TextView(this)
+                  edgeArrow.text = "❯"
+                  edgeArrow.textSize = 44f
+                  edgeArrow.setTextColor(Color.WHITE)
+                  edgeArrow.setShadowLayer(8f, 0f, 0f, Color.BLACK)
+                  edgeArrow.setPadding(dp(28), dp(16), dp(28), dp(16))
+                  edgeArrow.visibility = View.GONE
+                  root.addView(edgeArrow, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.RIGHT or Gravity.CENTER_VERTICAL))
 
                   setContentView(root)
                   updateNav()
