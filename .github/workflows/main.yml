@@ -2382,6 +2382,7 @@ jobs:
           import android.text.TextUtils
           import android.view.Gravity
           import android.view.MotionEvent
+          import android.view.ScaleGestureDetector
           import android.view.VelocityTracker
           import android.view.View
           import android.view.ViewConfiguration
@@ -2402,6 +2403,11 @@ jobs:
                       invalidate()
                   }
               var mode = 3
+                  set(v) {
+                      field = v
+                      invalidate()
+                  }
+              var aspect = 0 // 0 = fit, 1 = stretch, 2 = crop, 3 = original (used when kind == 5)
                   set(v) {
                       field = v
                       invalidate()
@@ -2476,6 +2482,37 @@ jobs:
                       c.drawPath(sh, line)
                       line.style = Paint.Style.STROKE
                       line.strokeWidth = 1.9f
+                  } else if (kind == 5) {
+                      val fr = Path()
+                      fr.addRoundRect(2.5f, 5.5f, 21.5f, 18.5f, 2.5f, 2.5f, Path.Direction.CW)
+                      c.drawPath(fr, line)
+                      when (aspect) {
+                          0 -> {
+                              c.drawLine(8f, 8.5f, 8f, 15.5f, line)
+                              c.drawLine(16f, 8.5f, 16f, 15.5f, line)
+                          }
+                          1 -> {
+                              c.drawLine(6.5f, 12f, 17.5f, 12f, line)
+                              val l1 = Path()
+                              l1.moveTo(9.5f, 9f); l1.lineTo(6.5f, 12f); l1.lineTo(9.5f, 15f)
+                              c.drawPath(l1, line)
+                              val r1 = Path()
+                              r1.moveTo(14.5f, 9f); r1.lineTo(17.5f, 12f); r1.lineTo(14.5f, 15f)
+                              c.drawPath(r1, line)
+                          }
+                          2 -> {
+                              c.drawLine(8f, 16f, 16f, 8f, line)
+                              val a1 = Path()
+                              a1.moveTo(8f, 12.5f); a1.lineTo(8f, 16f); a1.lineTo(11.5f, 16f)
+                              c.drawPath(a1, line)
+                              val a2 = Path()
+                              a2.moveTo(12.5f, 8f); a2.lineTo(16f, 8f); a2.lineTo(16f, 11.5f)
+                              c.drawPath(a2, line)
+                          }
+                          else -> {
+                              // original size: plain frame
+                          }
+                      }
                   } else if (kind == 1) {
                       val ph = Path()
                       ph.addRoundRect(3f, 10f, 15f, 21f, 2f, 2f, Path.Direction.CW)
@@ -2526,9 +2563,58 @@ jobs:
               }
           }
 
+          class ZoomVideoView(ctx: Context) : VideoView(ctx) {
+              var vidW = 0
+              var vidH = 0
+              // 0 = fit, 1 = stretch, 2 = crop (fill), 3 = original size
+              var fitMode = 0
+                  set(v) {
+                      field = v
+                      requestLayout()
+                  }
+
+              fun setVideoSize(w: Int, h: Int) {
+                  vidW = w
+                  vidH = h
+                  requestLayout()
+              }
+
+              override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                  val pw = getDefaultSize(0, widthMeasureSpec)
+                  val ph = getDefaultSize(0, heightMeasureSpec)
+                  if (vidW <= 0 || vidH <= 0) {
+                      setMeasuredDimension(pw, ph)
+                      return
+                  }
+                  var w = pw
+                  var h = ph
+                  when (fitMode) {
+                      0 -> {
+                          if (vidW.toLong() * ph > pw.toLong() * vidH) h = (pw.toLong() * vidH / vidW).toInt()
+                          else w = (ph.toLong() * vidW / vidH).toInt()
+                      }
+                      1 -> {
+                      }
+                      2 -> {
+                          if (vidW.toLong() * ph > pw.toLong() * vidH) w = (ph.toLong() * vidW / vidH).toInt()
+                          else h = (pw.toLong() * vidH / vidW).toInt()
+                      }
+                      else -> {
+                          w = vidW
+                          h = vidH
+                      }
+                  }
+                  setMeasuredDimension(w, h)
+              }
+          }
+
           class PlayerActivity : Activity() {
 
-              private lateinit var vv: VideoView
+              private lateinit var vv: ZoomVideoView
+              private lateinit var aspectBtn: RepeatIconView
+              private lateinit var scaleDet: ScaleGestureDetector
+              private var userZoom = 1f
+              private var aspectMode = 0
               private lateinit var overlay: FrameLayout
               private lateinit var seek: SeekBar
               private lateinit var cur: TextView
@@ -2785,6 +2871,27 @@ jobs:
                   showOverlay()
               }
 
+              private fun applyAspect() {
+                  vv.fitMode = aspectMode
+                  aspectBtn.aspect = aspectMode
+              }
+
+              private fun cycleAspect() {
+                  aspectMode = (aspectMode + 1) % 4
+                  userZoom = 1f
+                  vv.scaleX = 1f
+                  vv.scaleY = 1f
+                  getSharedPreferences("prefs", MODE_PRIVATE).edit().putInt("aspect", aspectMode).apply()
+                  applyAspect()
+                  showHud(when (aspectMode) {
+                      0 -> "متناسب"
+                      1 -> "کشیده"
+                      2 -> "پر کردن صفحه"
+                      else -> "اندازه اصلی"
+                  })
+                  showOverlay()
+              }
+
               private fun updateNav() {
                   prevBtn.alpha = if (index > 0) 1f else 0.35f
                   nextBtn.alpha = if (index < uris.size - 1) 1f else 0.35f
@@ -2825,7 +2932,7 @@ jobs:
               }
 
               // ---------------- touch gestures ----------------
-              // hold + drag sideways: live seek (bottom bar only) | fast flick: next/previous
+              // hold + drag sideways: live seek | pinch: zoom | double tap edges: next/previous
               // drag up/down: volume (bar on the touched side) | double tap: pause / resume
               // MX-style scrubbing: video is paused (so no sound), seeks are keyframe-only and never queue up.
               private fun issueScrub() {
@@ -2920,6 +3027,25 @@ jobs:
               }
 
               private fun onGesture(e: MotionEvent, w: Int, h: Int): Boolean {
+                  scaleDet.onTouchEvent(e)
+                  if (e.pointerCount > 1 && mode != 4) {
+                      // two fingers: pinch zoom only, cancel any seek / volume / tap in progress
+                      if (mode == 1) {
+                          finishScrub(startPos)
+                          gSeek.visibility = View.GONE
+                      }
+                      ui.removeCallbacks(tapRun)
+                      lastTapAt = 0L
+                      mode = 4
+                  }
+                  if (mode == 4) {
+                      if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) {
+                          tracker?.recycle()
+                          tracker = null
+                          mode = 0
+                      }
+                      return true
+                  }
                   when (e.actionMasked) {
                       MotionEvent.ACTION_DOWN -> {
                           downX = e.x
@@ -2995,20 +3121,12 @@ jobs:
                                       ui.postDelayed(tapRun, dt.toLong())
                                   }
                               } else if (mode == 1) {
-                                  if (Math.abs(vx) > dp(1200) && Math.abs(dx) > dp(60)) {
-                                      gSeek.visibility = View.GONE
-                                      hud.visibility = View.GONE
-                                      scrubPending = -1
-                                      scrubBusy = false
-                                      seekWasPlaying = false
-                                      if (dx > 0) goNext() else goPrev()
-                                  } else {
-                                      finishScrub(seekTarget)
-                                      seek.progress = seekTarget
-                                      cur.text = Ui.dur(seekTarget.toLong())
-                                      ui.postDelayed(hideGSeek, 500)
-                                      if (!vv.isPlaying) overlay.visibility = View.VISIBLE
-                                  }
+                                  // fast flick no longer switches videos: always a normal seek
+                                  finishScrub(seekTarget)
+                                  seek.progress = seekTarget
+                                  cur.text = Ui.dur(seekTarget.toLong())
+                                  ui.postDelayed(hideGSeek, 500)
+                                  if (!vv.isPlaying) overlay.visibility = View.VISIBLE
                               }
                           } else if (mode == 1) {
                               finishScrub(seekTarget)
@@ -3030,6 +3148,7 @@ jobs:
                   audio = getSystemService(AUDIO_SERVICE) as AudioManager
                   slop = ViewConfiguration.get(this).scaledTouchSlop
                   repeatMode = getSharedPreferences("prefs", MODE_PRIVATE).getInt("repeat", 3).coerceIn(0, 3)
+                  aspectMode = getSharedPreferences("prefs", MODE_PRIVATE).getInt("aspect", 0).coerceIn(0, 3)
 
                   val listU = intent.getStringArrayExtra("uris")
                   val listT = intent.getStringArrayExtra("titles")
@@ -3051,7 +3170,7 @@ jobs:
                   root.setBackgroundColor(Color.BLACK)
                   root.layoutDirection = View.LAYOUT_DIRECTION_LTR
 
-                  vv = VideoView(this)
+                  vv = ZoomVideoView(this)
                   root.addView(
                       vv,
                       FrameLayout.LayoutParams(
@@ -3060,6 +3179,16 @@ jobs:
                           Gravity.CENTER
                       )
                   )
+                  scaleDet = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                      override fun onScale(d: ScaleGestureDetector): Boolean {
+                          userZoom = (userZoom * d.scaleFactor).coerceIn(0.4f, 5f)
+                          vv.scaleX = userZoom
+                          vv.scaleY = userZoom
+                          showHud((Math.round(userZoom * 100)).toString() + "%")
+                          return true
+                      }
+                  })
+                  scaleDet.isQuickScaleEnabled = false
                   root.setOnTouchListener { v, e -> onGesture(e, v.width, v.height) }
 
                   overlay = FrameLayout(this)
@@ -3097,6 +3226,16 @@ jobs:
                   repeatBtn.setOnClickListener { cycleRepeat() }
                   top.addView(repeatBtn, topLp())
                   updateRepeatIcon()
+
+                  aspectBtn = RepeatIconView(this)
+                  aspectBtn.kind = 5
+                  aspectBtn.alpha = 0.6f
+                  aspectBtn.setPadding(dp(10), dp(10), dp(10), dp(10))
+                  aspectBtn.setOnClickListener { cycleAspect() }
+                  val aspLp = topLp()
+                  aspLp.marginStart = dp(8)
+                  top.addView(aspectBtn, aspLp)
+                  applyAspect()
 
                   titleView = TextView(this)
                   titleView.text = titles.getOrElse(index) { "" }
@@ -3273,6 +3412,8 @@ jobs:
 
                   vv.setOnPreparedListener { mp ->
                       mpRef = mp
+                      vv.setVideoSize(mp.videoWidth, mp.videoHeight)
+                      mp.setOnVideoSizeChangedListener { _, vw, vh -> vv.setVideoSize(vw, vh) }
                       mp.setOnSeekCompleteListener {
                           scrubBusy = false
                           if (mode == 1 && scrubPending >= 0) issueScrub()
