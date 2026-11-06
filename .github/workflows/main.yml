@@ -2391,6 +2391,11 @@ jobs:
 
           class RepeatIconView(ctx: Context) : View(ctx) {
               // 0 = repeat playlist (A), 1 = repeat one (1), 2 = play playlist once (A ->), 3 = off (empty loop)
+              var kind = 0 // 0 = repeat, 1 = rotate, 2 = trash, 3 = play, 4 = pause
+                  set(v) {
+                      field = v
+                      invalidate()
+                  }
               var mode = 3
                   set(v) {
                       field = v
@@ -2403,11 +2408,17 @@ jobs:
                   strokeWidth = 1.9f
                   strokeCap = Paint.Cap.ROUND
                   strokeJoin = Paint.Join.ROUND
+                  setShadowLayer(5f, 0f, 2f, Color.argb(170, 0, 0, 0))
               }
               private val txt = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                   color = Color.WHITE
                   textAlign = Paint.Align.CENTER
                   typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                  setShadowLayer(5f, 0f, 2f, Color.argb(170, 0, 0, 0))
+              }
+
+              init {
+                  setLayerType(LAYER_TYPE_SOFTWARE, null)
               }
 
               private fun arrowRight(c: Canvas, x: Float, y: Float) {
@@ -2415,6 +2426,14 @@ jobs:
                   p.moveTo(x - 3.2f, y - 3.2f)
                   p.lineTo(x, y)
                   p.lineTo(x - 3.2f, y + 3.2f)
+                  c.drawPath(p, line)
+              }
+
+              private fun arrowDown(c: Canvas, x: Float, y: Float) {
+                  val p = Path()
+                  p.moveTo(x - 3f, y - 3f)
+                  p.lineTo(x, y)
+                  p.lineTo(x + 3f, y - 3f)
                   c.drawPath(p, line)
               }
 
@@ -2433,11 +2452,45 @@ jobs:
               }
 
               override fun onDraw(c: Canvas) {
-                  val s = minOf(width, height) / 24f
+                  val aw = width - paddingLeft - paddingRight
+                  val ah = height - paddingTop - paddingBottom
+                  val s = minOf(aw, ah) / 24f
                   c.save()
-                  c.translate((width - 24f * s) / 2f, (height - 24f * s) / 2f)
+                  c.translate(paddingLeft + (aw - 24f * s) / 2f, paddingTop + (ah - 24f * s) / 2f)
                   c.scale(s, s)
-                  if (mode == 2) {
+                  if (kind == 3 || kind == 4) {
+                      line.style = Paint.Style.FILL_AND_STROKE
+                      line.strokeWidth = 1.2f
+                      val sh = Path()
+                      if (kind == 3) {
+                          sh.moveTo(7f, 4f); sh.lineTo(7f, 20f); sh.lineTo(20f, 12f); sh.close()
+                      } else {
+                          sh.addRoundRect(5.5f, 4f, 10f, 20f, 1f, 1f, Path.Direction.CW)
+                          sh.addRoundRect(14f, 4f, 18.5f, 20f, 1f, 1f, Path.Direction.CW)
+                      }
+                      c.drawPath(sh, line)
+                      line.style = Paint.Style.STROKE
+                      line.strokeWidth = 1.9f
+                  } else if (kind == 1) {
+                      val ph = Path()
+                      ph.addRoundRect(3f, 10f, 15f, 21f, 2f, 2f, Path.Direction.CW)
+                      c.drawPath(ph, line)
+                      val ar = Path()
+                      ar.moveTo(9f, 5f)
+                      ar.quadTo(19f, 3.5f, 19.5f, 12f)
+                      c.drawPath(ar, line)
+                      arrowDown(c, 19.5f, 12f)
+                  } else if (kind == 2) {
+                      c.drawLine(4f, 6.5f, 20f, 6.5f, line)
+                      val h = Path()
+                      h.moveTo(9f, 6.5f); h.lineTo(9f, 3.8f); h.lineTo(15f, 3.8f); h.lineTo(15f, 6.5f)
+                      c.drawPath(h, line)
+                      val body = Path()
+                      body.moveTo(6f, 6.5f); body.lineTo(7f, 20.5f); body.lineTo(17f, 20.5f); body.lineTo(18f, 6.5f)
+                      c.drawPath(body, line)
+                      c.drawLine(10f, 10f, 10f, 16.5f, line)
+                      c.drawLine(14f, 10f, 14f, 16.5f, line)
+                  } else if (mode == 2) {
                       glyph(c, "A", 12f, 8.5f, 12f)
                       c.drawLine(3f, 17.5f, 20.5f, 17.5f, line)
                       arrowRight(c, 20.5f, 17.5f)
@@ -2523,6 +2576,8 @@ jobs:
               private val hideVol = Runnable { volBar.visibility = View.GONE }
               private val tapRun = Runnable { toggleOverlay() }
               private lateinit var edgeArrow: TextView
+              private lateinit var centerIcon: RepeatIconView
+              private val hideCenter = Runnable { centerIcon.visibility = View.GONE }
               private var lastTapZone = 0
               private var quietLoad = false
               // repeat: 0 = repeat playlist, 1 = repeat one video, 2 = play playlist once, 3 = off (play this video once)
@@ -2576,9 +2631,9 @@ jobs:
               }
 
               private fun topLp(): LinearLayout.LayoutParams {
-                  val p = LinearLayout.LayoutParams(dp(48), dp(48))
-                  p.marginStart = dp(6)
-                  p.marginEnd = dp(6)
+                  val p = LinearLayout.LayoutParams(dp(44), dp(44))
+                  p.marginStart = dp(8)
+                  p.marginEnd = dp(8)
                   return p
               }
 
@@ -2604,6 +2659,13 @@ jobs:
                   } else {
                       showOverlay()
                   }
+              }
+
+              private fun showCenter(s: String) { // "play" or "pause"
+                  centerIcon.kind = if (s == "play") 3 else 4
+                  centerIcon.visibility = View.VISIBLE
+                  ui.removeCallbacks(hideCenter)
+                  ui.postDelayed(hideCenter, 800)
               }
 
               private fun showHud(s: String) {
@@ -2823,11 +2885,11 @@ jobs:
               if (vv.isPlaying) {
               vv.pause()
               playBtn.text = "▶"
-              showHud("⏸")
+              showCenter("pause")
               } else {
               vv.start()
               playBtn.text = "❚❚"
-              showHud("▶")
+              showCenter("play")
               }
               }
 
@@ -3010,7 +3072,9 @@ jobs:
                   top.setPadding(dp(10), dp(12), dp(10), dp(28))
                   top.background = shade(true)
 
-                  val rot = plainIcon("🔄", 22f)
+                  val rot = RepeatIconView(this)
+                  rot.kind = 1
+                  rot.setPadding(dp(10), dp(10), dp(10), dp(10))
                   rot.setOnClickListener {
                       requestedOrientation =
                           if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE)
@@ -3022,7 +3086,7 @@ jobs:
                   top.addView(rot, topLp())
 
                   repeatBtn = RepeatIconView(this)
-                  repeatBtn.setPadding(dp(9), dp(9), dp(9), dp(9))
+                  repeatBtn.setPadding(dp(10), dp(10), dp(10), dp(10))
                   repeatBtn.setOnClickListener { cycleRepeat() }
                   top.addView(repeatBtn, topLp())
                   updateRepeatIcon()
@@ -3035,7 +3099,9 @@ jobs:
                   titleView.ellipsize = TextUtils.TruncateAt.END
                   titleView.gravity = Gravity.CENTER
                   top.addView(titleView, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-                  val trash = plainIcon("🗑", 22f)
+                  val trash = RepeatIconView(this)
+                  trash.kind = 2
+                  trash.setPadding(dp(10), dp(10), dp(10), dp(10))
                   trash.setOnClickListener { confirmDeleteCurrent() }
                   top.addView(trash, topLp())
 
@@ -3187,6 +3253,12 @@ jobs:
                   edgeArrow.setPadding(dp(28), dp(16), dp(28), dp(16))
                   edgeArrow.visibility = View.GONE
                   root.addView(edgeArrow, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.RIGHT or Gravity.CENTER_VERTICAL))
+
+                  // ---- centre play / pause icon (no frame, white with shadow) ----
+                  centerIcon = RepeatIconView(this)
+                  centerIcon.setPadding(dp(14), dp(14), dp(14), dp(14))
+                  centerIcon.visibility = View.GONE
+                  root.addView(centerIcon, FrameLayout.LayoutParams(dp(84), dp(84), Gravity.CENTER))
 
                   setContentView(root)
                   updateNav()
