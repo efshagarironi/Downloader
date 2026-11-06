@@ -119,6 +119,7 @@ jobs:
               implementation 'androidx.core:core-ktx:1.13.1'
               implementation 'io.github.junkfood02.youtubedl-android:library:0.18.1'
               implementation 'io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1'
+              implementation 'io.github.junkfood02.youtubedl-android:aria2c:0.18.1'
           }
           EOF
 
@@ -212,6 +213,7 @@ jobs:
           import android.provider.MediaStore
           import android.webkit.MimeTypeMap
           import androidx.core.app.NotificationCompat
+          import com.yausername.aria2c.Aria2c
           import com.yausername.ffmpeg.FFmpeg
           import com.yausername.youtubedl_android.YoutubeDL
           import com.yausername.youtubedl_android.YoutubeDLRequest
@@ -237,6 +239,7 @@ jobs:
 
           object Engine {
               private var ready = false
+              @Volatile var aria2Ready = false
 
               @Synchronized
               fun ensureInit(ctx: Context) {
@@ -244,6 +247,12 @@ jobs:
                   val app = ctx.applicationContext
                   YoutubeDL.getInstance().init(app)
                   FFmpeg.getInstance().init(app)
+                  try {
+                      Aria2c.getInstance().init(app)
+                      aria2Ready = true
+                  } catch (e: Throwable) {
+                      aria2Ready = false
+                  }
                   ready = true
               }
 
@@ -406,6 +415,12 @@ jobs:
                   req.addOption("-N", "8")
                   req.addOption("--socket-timeout", "20")
                   req.addOption("--throttled-rate", "100K")
+                  // aria2 (multi-connection) for ordinary sites; not for YouTube/Instagram/Threads, where many connections trigger blocks.
+                  // Only on the first attempt: later fallback attempts use the built-in downloader.
+                  if (level == 0 && Engine.aria2Ready &&
+                      !Regex("(youtube\\.com|youtu\\.be|youtube-nocookie\\.com|instagram\\.com|threads\\.(net|com))", RegexOption.IGNORE_CASE).containsMatchIn(url)) {
+                      req.addOption("--downloader", "libaria2c.so")
+                  }
                   if (Regex("(youtube\\.com|youtu\\.be|youtube-nocookie\\.com)", RegexOption.IGNORE_CASE).containsMatchIn(url)) {
                       req.addOption("--http-chunk-size", "10M")
                   }
