@@ -2442,6 +2442,9 @@ jobs:
               private lateinit var edgeArrow: TextView
               private var lastTapZone = 0
               private var quietLoad = false
+              // repeat: 0 = repeat playlist, 1 = repeat one video, 2 = play playlist once, 3 = off (play this video once)
+              private var repeatMode = 3
+              private lateinit var repeatBtn: TextView
               private var bottomBarView: View? = null
               private val hideArrow = Runnable { edgeArrow.visibility = View.GONE }
 
@@ -2597,6 +2600,34 @@ jobs:
                       afterDelete(pendingDelIndex)
                   }
                   pendingDelIndex = -1
+              }
+
+              private fun updateRepeatIcon() {
+                  repeatBtn.text = when (repeatMode) {
+                      0 -> "🔁"
+                      1 -> "🔂"
+                      2 -> "➡️"
+                      else -> "🔁"
+                  }
+                  repeatBtn.alpha = if (repeatMode == 3) 0.45f else 1f
+              }
+
+              private fun cycleRepeat() {
+                  repeatMode = (repeatMode + 1) % 4
+                  getSharedPreferences("prefs", MODE_PRIVATE).edit().putInt("repeat", repeatMode).apply()
+                  try {
+                      mpRef?.isLooping = (repeatMode == 1)
+                  } catch (e: Exception) {
+                  }
+                  updateRepeatIcon()
+                  val msg = when (repeatMode) {
+                      0 -> "تکرار لیست پخش"
+                      1 -> "تکرار یک ویدئو"
+                      2 -> "پخش لیست فقط یک بار"
+                      else -> "خاموش: فقط همین ویدئو یک بار پخش می‌شود"
+                  }
+                  Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+                  showOverlay()
               }
 
               private fun updateNav() {
@@ -2843,6 +2874,7 @@ jobs:
                   volumeControlStream = AudioManager.STREAM_MUSIC
                   audio = getSystemService(AUDIO_SERVICE) as AudioManager
                   slop = ViewConfiguration.get(this).scaledTouchSlop
+                  repeatMode = getSharedPreferences("prefs", MODE_PRIVATE).getInt("repeat", 3).coerceIn(0, 3)
 
                   val listU = intent.getStringArrayExtra("uris")
                   val listT = intent.getStringArrayExtra("titles")
@@ -2901,6 +2933,11 @@ jobs:
                       showOverlay()
                   }
                   top.addView(rot, LinearLayout.LayoutParams(dp(44), dp(44)))
+
+                  repeatBtn = circle("🔁", Color.argb(70, 255, 255, 255), 16f)
+                  repeatBtn.setOnClickListener { cycleRepeat() }
+                  top.addView(repeatBtn, LinearLayout.LayoutParams(dp(44), dp(44)))
+                  updateRepeatIcon()
 
                   titleView = TextView(this)
                   titleView.text = titles.getOrElse(index) { "" }
@@ -3072,16 +3109,26 @@ jobs:
                           scrubBusy = false
                           if (mode == 1 && scrubPending >= 0) issueScrub()
                       }
-                      mp.isLooping = false
+                      mp.isLooping = (repeatMode == 1)
                       if (pos > 0) vv.seekTo(pos)
                       vv.start()
                       if (!quietLoad) showOverlay()
                       quietLoad = false
                       }
                       vv.setOnCompletionListener {
-                      playBtn.text = "▶"
-                      ui.removeCallbacks(hideRun)
-                      overlay.visibility = View.VISIBLE
+                          if (repeatMode == 0 || repeatMode == 2) {
+                              if (index < uris.size - 1) {
+                                  goNext(true)
+                                  return@setOnCompletionListener
+                              } else if (repeatMode == 0) {
+                                  quietLoad = true
+                                  loadAt(0)
+                                  return@setOnCompletionListener
+                              }
+                          }
+                          playBtn.text = "▶"
+                          ui.removeCallbacks(hideRun)
+                          overlay.visibility = View.VISIBLE
                   }
                   vv.setOnErrorListener { _, _, _ ->
                       Toast.makeText(this, "این فایل قابل پخش نیست", Toast.LENGTH_LONG).show()
