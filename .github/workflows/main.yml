@@ -1139,7 +1139,7 @@ jobs:
 
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
-                  quality = getSharedPreferences("prefs", MODE_PRIVATE).getInt("q", 2).coerceIn(0, labels.size - 1)
+                  quality = savedQuality()
                   // Warm up the download engine right away so a shared link starts without a pause.
                   Thread {
                       try {
@@ -1167,9 +1167,13 @@ jobs:
                   refreshLog()
               }
 
+              private fun savedQuality(): Int =
+                  getSharedPreferences("prefs", MODE_PRIVATE).getInt("q", 2).coerceIn(0, labels.size - 1)
+
               override fun onNewIntent(intent: Intent) {
                   super.onNewIntent(intent)
                   setIntent(intent)
+                  quality = savedQuality()
                   extractShared(intent)?.let {
                       sharedSrc = sourceOf(intent, false)
                       handleShare(it)
@@ -1327,17 +1331,16 @@ jobs:
                   header.orientation = LinearLayout.HORIZONTAL
                   header.gravity = Gravity.CENTER_VERTICAL
 
+                  // Download arrow (top-right, no frame) – same size as the hamburger frame
                   val logo = ImageView(this)
-                  logo.setImageResource(R.mipmap.ic_launcher)
-                  Ui.roundClip(logo, 15)
-                  header.addView(logo, LinearLayout.LayoutParams(dp(56), dp(56)))
+                  logo.setImageResource(R.drawable.ic_arrow_green)
+                  logo.scaleType = ImageView.ScaleType.FIT_CENTER
+                  header.addView(logo, LinearLayout.LayoutParams(dp(46), dp(46)))
 
-                  val titles = LinearLayout(this)
-                  titles.orientation = LinearLayout.VERTICAL
-                  titles.setPaddingRelative(dp(14), 0, 0, 0)
-                  titles.addView(label("Downloader", 24f, Ui.TEXT, true))
-                  titles.addView(label("دانلود ساده و سریع از شبکه‌های اجتماعی", 12.5f, Ui.MUTED))
-                  header.addView(titles)
+                  header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+                  val appTitle = label("Downloader", 24f, Ui.TEXT, true)
+                  appTitle.gravity = Gravity.CENTER
+                  header.addView(appTitle)
 
                   // Hamburger menu (top-left corner)
                   header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
@@ -1347,9 +1350,6 @@ jobs:
                   header.addView(burger, LinearLayout.LayoutParams(dp(46), dp(46)))
                   root.addView(header, lp())
 
-                  val tip = label("در یوتیوب، اینستاگرام، X، تیک‌تاک و ... روی «اشتراک‌گذاری» بزن و این برنامه را انتخاب کن.", 13f, Ui.MUTED)
-                  tip.setPadding(0, dp(14), 0, dp(14))
-                  root.addView(tip, lp())
 
                   // ---------- Download card ----------
                   val card = LinearLayout(this)
@@ -1392,6 +1392,7 @@ jobs:
                       c.setPadding(dp(16), dp(9), dp(16), dp(9))
                       c.setOnClickListener {
                           quality = i
+                          getSharedPreferences("prefs", MODE_PRIVATE).edit().putInt("q", i).commit()
                           styleChips()
                       }
                       chips.add(c)
@@ -1422,7 +1423,7 @@ jobs:
                   dlp.topMargin = dp(18)
                   card.addView(dl, dlp)
 
-                  root.addView(card, lp())
+                  root.addView(card, lp(20))
 
                   // ---------- Downloaded files card ----------
                   val files = LinearLayout(this)
@@ -2818,14 +2819,18 @@ jobs:
                   Spec("brSize", "اندازه", "اندازه آیکون لیست تکرار", 30, 120, 42),
                   Spec("brX", "جای افقی", "چپ (منفی) ↔ راست (مثبت)", -80, 80, 0),
                   Spec("brY", "جای عمودی", "بالا (منفی) ↔ پایین (مثبت)", -80, 80, 0),
-                  Spec("bgA", "فاصله تغییر اندازه تصویر تا قبلی", "فاصله بین آیکون تغییر اندازه تصویر و آیکون قبلی", 0, 80, 4),
-                  Spec("bgT", "فاصله بعدی تا لیست تکرار", "فاصله بین آیکون بعدی و آیکون لیست تکرار", 0, 80, 4)
+                  Spec("bgA", "فاصله لیست تکرار تا قبلی", "فاصله بین آیکون لیست تکرار و آیکون قبلی", 0, 80, 4),
+                  Spec("bgT", "فاصله بعدی تا تغییر اندازه تصویر", "فاصله بین آیکون بعدی و آیکون تغییر اندازه تصویر", 0, 80, 4)
               )
 
               // Progress bars: 0 = visible bar above the bottom icons, 1 = invisible bar that appears while dragging on the video
               val progressSpecs: List<Spec> = listOf(
-                  Spec("pbY", "جای عمودی نوار پیشرفت", "بالا بردن (مثبت) یا پایین آوردن (منفی) نوار پیشرفتِ بالای آیکون‌های نوار پایین", -40, 150, 0),
-                  Spec("gpY", "جای عمودی نوار پیشرفت نامرئی", "ارتفاع نوار پیشرفتی که هنگام کشیدن انگشت روی تصویر ظاهر می‌شود، از لبه پایین صفحه", 0, 300, 28)
+                  Spec("pbY", "جای عمودی نوار پیشرفت", "بالا بردن (مثبت) یا پایین آوردن (منفی) نوار پیشرفتِ بالای آیکون‌های نوار پایین", -50, 20, 0),
+                  Spec("gpY", "جای عمودی نوار پیشرفت نامرئی", "ارتفاع نوار پیشرفتی که هنگام کشیدن انگشت روی تصویر ظاهر می‌شود، از لبه پایین صفحه", 0, 300, 28),
+                  Spec("pbLen", "طول نوار پیشرفت", "کوتاه یا بلند شدن نوار پیشرفتِ بالای آیکون‌ها (درصد از عرض)", 20, 100, 100),
+                  Spec("pbThick", "کلفتی نوار پیشرفت", "نازک یا کلفت شدن نوار پیشرفتِ بالای آیکون‌ها", 1, 14, 4),
+                  Spec("gpLen", "طول نوار پیشرفت نامرئی", "کوتاه یا بلند شدن نوار پیشرفت نامرئی (درصد از عرض)", 20, 100, 100),
+                  Spec("gpThick", "کلفتی نوار پیشرفت نامرئی", "نازک یا کلفت شدن نوار پیشرفت نامرئی", 2, 20, 6)
               )
 
               fun resetList(c: Context, l: List<Spec>) {
@@ -2855,8 +2860,8 @@ jobs:
                   prev.layoutParams = lpOf(3, g(9))
                   play.layoutParams = lpOf(0, g(10))
                   next.layoutParams = lpOf(6, g(18))
-                  aspect.layoutParams = lpOf(11, g(17))
-                  repeat.layoutParams = lpOf(14, 0)
+                  aspect.layoutParams = lpOf(11, 0)
+                  repeat.layoutParams = lpOf(14, g(17))
                   val av = d(g(11)) / 5
                   aspect.setPadding(av, av, av, av)
                   val rv = d(g(14)) / 5
@@ -2884,6 +2889,37 @@ jobs:
                   val e = prefs(c).edit()
                   for (s in specs) e.remove(s.key)
                   e.apply()
+              }
+
+              val PROG_COLOR: Int = Color.parseColor("#64B5FF")
+              val TRACK_COLOR: Int = Color.parseColor("#555559")
+
+              // Light-blue progress, gray track, round thumb; thickness in dp
+              fun styleSeek(c: Context, sb: android.widget.SeekBar, thickDp: Int) {
+                  val t = Ui.dp(c, thickDp)
+                  val bg = android.graphics.drawable.GradientDrawable()
+                  bg.setColor(TRACK_COLOR)
+                  bg.cornerRadius = t / 2f
+                  val fg = android.graphics.drawable.GradientDrawable()
+                  fg.setColor(PROG_COLOR)
+                  fg.cornerRadius = t / 2f
+                  val clip = android.graphics.drawable.ClipDrawable(fg, Gravity.LEFT, android.graphics.drawable.ClipDrawable.HORIZONTAL)
+                  val ld = android.graphics.drawable.LayerDrawable(arrayOf<android.graphics.drawable.Drawable>(bg, clip))
+                  ld.setId(0, android.R.id.background)
+                  ld.setId(1, android.R.id.progress)
+                  for (i in 0..1) {
+                      ld.setLayerHeight(i, t)
+                      ld.setLayerGravity(i, Gravity.CENTER_VERTICAL)
+                  }
+                  val th = maxOf(Ui.dp(c, 12), (t * 2.8f).toInt())
+                  val thumb = android.graphics.drawable.GradientDrawable()
+                  thumb.shape = android.graphics.drawable.GradientDrawable.OVAL
+                  thumb.setColor(PROG_COLOR)
+                  thumb.setSize(th, th)
+                  sb.layoutDirection = View.LAYOUT_DIRECTION_LTR
+                  sb.progressDrawable = ld
+                  sb.thumb = thumb
+                  sb.setPadding(th / 2, 0, th / 2, 0)
               }
 
               fun size(c: Context) = get(c, specs[0])
@@ -3391,14 +3427,13 @@ jobs:
                   nextV.setPadding(dp(8), dp(8), dp(8), dp(8))
                   aspectV = RepeatIconView(this)
                   aspectV.kind = 5
-                  aspectV.alpha = 0.6f
                   repeatV = RepeatIconView(this)
                   repeatV.mode = 0
-                  row.addView(aspectV)
+                  row.addView(repeatV)
                   row.addView(prevV)
                   row.addView(playV)
                   row.addView(nextV)
-                  row.addView(repeatV)
+                  row.addView(aspectV)
 
                   val rp = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM)
                   rp.bottomMargin = dp(24)
@@ -3411,8 +3446,8 @@ jobs:
                   body.addView(group("آیکون پخش / توقف (وسط)", listOf(0, 1, 2)), lp(14))
                   body.addView(group("آیکون ویدئوی قبلی", listOf(3, 4, 5)), lp(14))
                   body.addView(group("آیکون ویدئوی بعدی", listOf(6, 7, 8)), lp(14))
-                  body.addView(group("آیکون تغییر اندازه تصویر (سمت چپ آیکون قبلی)", listOf(11, 12, 13)), lp(14))
-                  body.addView(group("آیکون لیست تکرار (سمت راست آیکون بعدی)", listOf(14, 15, 16)), lp(14))
+                  body.addView(group("آیکون تغییر اندازه تصویر (سمت راست آیکون بعدی)", listOf(11, 12, 13)), lp(14))
+                  body.addView(group("آیکون لیست تکرار (سمت چپ آیکون قبلی)", listOf(14, 15, 16)), lp(14))
                   body.addView(group("فاصله بین آیکون‌ها", listOf(9, 10, 17, 18)), lp(14))
 
                   applyPreview()
@@ -3555,26 +3590,32 @@ jobs:
                   scroll.addView(body)
                   root.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
-                  for (i in specs.indices) body.addView(card(i), lp(if (i == 0) 6 else 14))
+                  body.addView(group("نوار پیشرفت بالای آیکون‌ها", listOf(0, 2, 3)), lp(6))
+                  body.addView(group("نوار پیشرفت نامرئی (هنگام کشیدن انگشت روی تصویر)", listOf(1, 4, 5)), lp(14))
 
                   setContentView(root)
               }
 
-              private fun card(i: Int): View {
-                  val s = specs[i]
+              private fun group(title: String, idx: List<Int>): View {
                   val card = LinearLayout(this)
                   card.orientation = LinearLayout.VERTICAL
                   card.setPadding(dp(16), dp(14), dp(16), dp(10))
                   card.background = Ui.rect(this, Ui.CARD, 20, Ui.CARD_STROKE, 1)
+                  card.addView(tv(title, 15f, Ui.GREEN, true))
+                  for (i in idx) addSlider(card, i)
+                  return card
+              }
 
+              private fun addSlider(card: LinearLayout, i: Int) {
+                  val s = specs[i]
                   val head = LinearLayout(this)
                   head.orientation = LinearLayout.HORIZONTAL
                   head.gravity = Gravity.CENTER_VERTICAL
-                  head.addView(tv(s.title, 15f, Ui.GREEN, true), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                  head.addView(tv(s.title, 14f, Ui.TEXT, true), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
                   val value = tv(cur[i].toString(), 13f, Ui.GREEN, true)
                   head.addView(value)
-                  card.addView(head)
-                  card.addView(tv(s.sub, 11.5f, Ui.MUTED), lp(4))
+                  card.addView(head, lp(12))
+                  card.addView(tv(s.sub, 11.5f, Ui.MUTED))
 
                   val sb = SeekBar(this)
                   sb.layoutDirection = View.LAYOUT_DIRECTION_LTR
@@ -3593,10 +3634,9 @@ jobs:
                       override fun onStartTrackingTouch(b: SeekBar?) {}
                       override fun onStopTrackingTouch(b: SeekBar?) {}
                   })
-                  card.addView(sb, lp(8))
+                  card.addView(sb, lp(4))
                   seekBars[i] = sb
                   valueViews[i] = value
-                  return card
               }
 
               private fun resetAll() {
@@ -4303,8 +4343,14 @@ jobs:
               private fun showGSeek(frac: Float, w: Int) {
                   ui.removeCallbacks(hideGSeek)
                   gSeek.visibility = View.VISIBLE
+                  val barW = ((w - dp(32)) * BarPrefs.get(this, BarPrefs.progressSpecs[4]) / 100f).toInt()
+                  val gl = gSeek.layoutParams
+                  if (gl.width != barW) {
+                      gl.width = barW
+                      gSeek.layoutParams = gl
+                  }
                   val lp = gSeekFill.layoutParams
-                  lp.width = ((w - dp(32)) * frac.coerceIn(0f, 1f)).toInt()
+                  lp.width = (barW * frac.coerceIn(0f, 1f)).toInt()
                   gSeekFill.layoutParams = lp
               }
 
@@ -4522,7 +4568,6 @@ jobs:
 
                   aspectBtn = RepeatIconView(this)
                   aspectBtn.kind = 5
-                  aspectBtn.alpha = 0.6f
                   aspectBtn.setPadding(barPad(), barPad(), barPad(), barPad())
                   aspectBtn.setOnClickListener { cycleAspect() }
                   applyAspect()
@@ -4572,9 +4617,9 @@ jobs:
                   total.textSize = 12f
 
                   seek = SeekBar(this)
-                  seek.progressTintList = ColorStateList.valueOf(Ui.GREEN)
-                  seek.thumbTintList = ColorStateList.valueOf(Ui.GREEN)
-                  seek.progressBackgroundTintList = ColorStateList.valueOf(Color.argb(120, 255, 255, 255))
+                  val pbLen = BarPrefs.get(this, BarPrefs.progressSpecs[2])
+                  val pbThick = BarPrefs.get(this, BarPrefs.progressSpecs[3])
+                  BarPrefs.styleSeek(this, seek, pbThick)
                   seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                       override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) {
                           if (fromUser) cur.text = Ui.dur(p.toLong())
@@ -4592,8 +4637,12 @@ jobs:
                       }
                   })
 
+                  val sideW = (100 - pbLen) / 2f
+                  val seekH = maxOf(dp(36), dp(pbThick) * 3 + dp(8))
                   timeRow.addView(cur)
-                  timeRow.addView(seek, LinearLayout.LayoutParams(0, dp(36), 1f))
+                  timeRow.addView(View(this), LinearLayout.LayoutParams(0, 1, sideW))
+                  timeRow.addView(seek, LinearLayout.LayoutParams(0, seekH, pbLen.toFloat()))
+                  timeRow.addView(View(this), LinearLayout.LayoutParams(0, 1, sideW))
                   timeRow.addView(total)
                   timeRow.translationY = -dp(BarPrefs.get(this, BarPrefs.progressSpecs[0])).toFloat()
                   bottom.addView(timeRow)
@@ -4632,11 +4681,11 @@ jobs:
                       }
                   }
                   BarPrefs.applyBottom(this, prevBtn, playBtn, nextBtn, aspectBtn, repeatBtn)
-                  ctl.addView(aspectBtn)
+                  ctl.addView(repeatBtn)
                   ctl.addView(prevBtn)
                   ctl.addView(playBtn)
                   ctl.addView(nextBtn)
-                  ctl.addView(repeatBtn)
+                  ctl.addView(aspectBtn)
                   bottom.addView(ctl)
 
                   overlay.addView(
@@ -4667,12 +4716,14 @@ jobs:
 
                   // ---- gesture seek bar (bottom) ----
                   gSeek = FrameLayout(this)
-                  gSeek.background = Ui.rect(this, Color.argb(110, 255, 255, 255), 3)
+                  val gpThick = BarPrefs.get(this, BarPrefs.progressSpecs[5])
+                  val gpRad = maxOf(gpThick / 2, 1)
+                  gSeek.background = Ui.rect(this, BarPrefs.TRACK_COLOR, gpRad)
                   gSeek.visibility = View.GONE
                   gSeekFill = View(this)
-                  gSeekFill.background = Ui.rect(this, Ui.GREEN, 3)
+                  gSeekFill.background = Ui.rect(this, BarPrefs.PROG_COLOR, gpRad)
                   gSeek.addView(gSeekFill, FrameLayout.LayoutParams(0, FrameLayout.LayoutParams.MATCH_PARENT))
-                  val gsLp = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(6), Gravity.BOTTOM)
+                  val gsLp = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(gpThick), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
                   gsLp.setMargins(dp(16), 0, dp(16), dp(BarPrefs.get(this, BarPrefs.progressSpecs[1])))
                   root.addView(gSeek, gsLp)
 
@@ -4891,6 +4942,22 @@ jobs:
                   android:strokeWidth="6"
                   android:strokeLineJoin="round"
                   android:pathData="M42,27 L66,27 L66,50 L82,50 L54,80 L26,50 L42,50 Z" />
+          </vector>
+          EOF
+
+          cat > app/src/main/res/drawable/ic_arrow_green.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="46dp"
+              android:height="46dp"
+              android:viewportWidth="62"
+              android:viewportHeight="62">
+              <path
+                  android:fillColor="#22C55E"
+                  android:strokeColor="#22C55E"
+                  android:strokeWidth="6"
+                  android:strokeLineJoin="round"
+                  android:pathData="M19,5 L43,5 L43,28 L59,28 L31,58 L3,28 L19,28 Z" />
           </vector>
           EOF
 
