@@ -2632,8 +2632,9 @@ jobs:
 
               private fun topLp(): LinearLayout.LayoutParams {
                   val p = LinearLayout.LayoutParams(dp(44), dp(44))
-                  p.marginStart = dp(8)
-                  p.marginEnd = dp(8)
+                  p.marginStart = dp(3)
+                  p.marginEnd = dp(3)
+                  p.gravity = Gravity.CENTER_VERTICAL
                   return p
               }
 
@@ -3074,6 +3075,7 @@ jobs:
 
                   val rot = RepeatIconView(this)
                   rot.kind = 1
+                  rot.alpha = 0.6f
                   rot.setPadding(dp(10), dp(10), dp(10), dp(10))
                   rot.setOnClickListener {
                       requestedOrientation =
@@ -3101,6 +3103,7 @@ jobs:
                   top.addView(titleView, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
                   val trash = RepeatIconView(this)
                   trash.kind = 2
+                  trash.alpha = 0.6f
                   trash.setPadding(dp(10), dp(10), dp(10), dp(10))
                   trash.setOnClickListener { confirmDeleteCurrent() }
                   top.addView(trash, topLp())
