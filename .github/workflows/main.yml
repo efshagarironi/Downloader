@@ -227,6 +227,10 @@ jobs:
                       android:exported="false" />
 
                   <activity
+                      android:name=".BottomBarSettingsActivity"
+                      android:exported="false" />
+
+                  <activity
                       android:name=".PlayerActivity"
                       android:exported="false"
                       android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|uiMode"
@@ -2865,6 +2869,43 @@ jobs:
                   Spec("barX", "جای آیکون‌ها (از کناره‌ها)", "فاصله آیکون‌ها از لبه چپ و راست صفحه", 0, 80, 10)
               )
 
+              // Bottom bar: 0-2 play (size,x,y)  3-5 previous  6-8 next  9 gap prev-play  10 gap play-next
+              val bottomSpecs: List<Spec> = listOf(
+                  Spec("bpSize", "اندازه", "اندازه آیکون پخش / توقف", 40, 140, 84),
+                  Spec("bpX", "جای افقی", "چپ (منفی) ↔ راست (مثبت)", -80, 80, 0),
+                  Spec("bpY", "جای عمودی", "بالا (منفی) ↔ پایین (مثبت)", -80, 80, 0),
+                  Spec("bvSize", "اندازه", "اندازه آیکون ویدئوی قبلی", 30, 120, 62),
+                  Spec("bvX", "جای افقی", "چپ (منفی) ↔ راست (مثبت)", -80, 80, 0),
+                  Spec("bvY", "جای عمودی", "بالا (منفی) ↔ پایین (مثبت)", -80, 80, 0),
+                  Spec("bnSize", "اندازه", "اندازه آیکون ویدئوی بعدی", 30, 120, 62),
+                  Spec("bnX", "جای افقی", "چپ (منفی) ↔ راست (مثبت)", -80, 80, 0),
+                  Spec("bnY", "جای عمودی", "بالا (منفی) ↔ پایین (مثبت)", -80, 80, 0),
+                  Spec("bgL", "فاصله قبلی تا پخش", "فاصله بین آیکون قبلی و آیکون پخش", 0, 80, 12),
+                  Spec("bgR", "فاصله پخش تا بعدی", "فاصله بین آیکون پخش و آیکون بعدی", 0, 80, 12)
+              )
+
+              fun resetList(c: Context, l: List<Spec>) {
+                  val e = prefs(c).edit()
+                  for (s in l) e.remove(s.key)
+                  e.apply()
+              }
+
+              // Applies the saved bottom-bar layout to the three icons (used by the player and by the preview)
+              fun applyBottom(c: Context, prev: View, play: View, next: View) {
+                  fun g(i: Int) = get(c, bottomSpecs[i])
+                  fun d(x: Int) = Ui.dp(c, x)
+                  val pl = LinearLayout.LayoutParams(d(g(3)), d(g(3)))
+                  pl.marginEnd = d(g(9))
+                  prev.layoutParams = pl
+                  val ml = LinearLayout.LayoutParams(d(g(0)), d(g(0)))
+                  ml.marginEnd = d(g(10))
+                  play.layoutParams = ml
+                  next.layoutParams = LinearLayout.LayoutParams(d(g(6)), d(g(6)))
+                  prev.translationX = d(g(4)).toFloat(); prev.translationY = d(g(5)).toFloat()
+                  play.translationX = d(g(1)).toFloat(); play.translationY = d(g(2)).toFloat()
+                  next.translationX = d(g(7)).toFloat(); next.translationY = d(g(8)).toFloat()
+              }
+
               private fun prefs(c: Context) = c.getSharedPreferences("prefs", Context.MODE_PRIVATE)
 
               fun get(c: Context, s: Spec): Int = prefs(c).getInt(s.key, s.def).coerceIn(s.min, s.max)
@@ -2954,33 +2995,39 @@ jobs:
                   scroll.addView(body)
                   root.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
-                  // ---- "نوار" item, framed ----
-                  val item = LinearLayout(this)
-                  item.orientation = LinearLayout.HORIZONTAL
-                  item.gravity = Gravity.CENTER_VERTICAL
-                  item.setPadding(dp(16), dp(14), dp(16), dp(14))
-                  val bg = Ui.grad(this, Ui.GREEN_SEL, Color.parseColor("#17304F"), 20)
-                  bg.setStroke(dp(1), Ui.GREEN)
-                  item.background = bg
-                  item.isClickable = true
-                  item.setOnClickListener { Nav.open(this, BarSettingsActivity::class.java) }
+                  fun menuItem(title: String, subText: String, cls: Class<*>, top: Int) {
+                      val item = LinearLayout(this)
+                      item.orientation = LinearLayout.HORIZONTAL
+                      item.gravity = Gravity.CENTER_VERTICAL
+                      item.setPadding(dp(16), dp(14), dp(16), dp(14))
+                      val bg = Ui.grad(this, Ui.GREEN_SEL, Color.parseColor("#17304F"), 20)
+                      bg.setStroke(dp(1), Ui.GREEN)
+                      item.background = bg
+                      item.isClickable = true
+                      item.setOnClickListener { Nav.open(this, cls) }
 
-                  val ic = tv("🎚", 22f, Color.WHITE)
-                  ic.gravity = Gravity.CENTER
-                  ic.background = Ui.oval(Color.argb(45, 34, 197, 94))
-                  item.addView(ic, LinearLayout.LayoutParams(dp(48), dp(48)))
+                      val ic = tv("🎚", 22f, Color.WHITE)
+                      ic.gravity = Gravity.CENTER
+                      ic.background = Ui.oval(Color.argb(45, 34, 197, 94))
+                      item.addView(ic, LinearLayout.LayoutParams(dp(48), dp(48)))
 
-                  val col = LinearLayout(this)
-                  col.orientation = LinearLayout.VERTICAL
-                  col.setPaddingRelative(dp(12), 0, dp(8), 0)
-                  col.addView(tv("نوار", 16f, Ui.TEXT, true))
-                  val sub = tv("اندازه، جای آیکون‌ها و فاصله بین آنها در نوار بالای پخش‌کننده", 12f, Ui.MUTED)
-                  sub.setPadding(0, dp(3), 0, 0)
-                  col.addView(sub)
-                  item.addView(col, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-                  item.addView(tv("‹", 28f, Ui.GREEN, true))
+                      val col = LinearLayout(this)
+                      col.orientation = LinearLayout.VERTICAL
+                      col.setPaddingRelative(dp(12), 0, dp(8), 0)
+                      col.addView(tv(title, 16f, Ui.TEXT, true))
+                      val sub = tv(subText, 12f, Ui.MUTED)
+                      sub.setPadding(0, dp(3), 0, 0)
+                      col.addView(sub)
+                      item.addView(col, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                      item.addView(tv("‹", 28f, Ui.GREEN, true))
 
-                  body.addView(item, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+                      val p = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                      p.topMargin = dp(top)
+                      body.addView(item, p)
+                  }
+
+                  menuItem("نوار بالا", "اندازه، جای آیکون‌ها و فاصله بین آنها در نوار بالای پخش‌کننده", BarSettingsActivity::class.java, 0)
+                  menuItem("نوار پایین", "اندازه و جای جداگانه آیکون‌های پخش، قبلی و بعدی و فاصله بین آنها", BottomBarSettingsActivity::class.java, 14)
 
                   setContentView(root)
               }
@@ -3054,7 +3101,7 @@ jobs:
                   back.setPadding(dp(12), dp(4), dp(12), dp(4))
                   back.setOnClickListener { onBackPressed() }
                   bar.addView(back)
-                  bar.addView(tv("نوار", 19f, Ui.TEXT, true), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                  bar.addView(tv("نوار بالا", 19f, Ui.TEXT, true), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
                   val reset = tv("بازنشانی", 13f, Ui.GREEN, true)
                   reset.setPadding(dp(10), dp(8), dp(10), dp(8))
                   reset.setOnClickListener { resetAll() }
@@ -3180,6 +3227,190 @@ jobs:
                       val pad = dp(size) / 5
                       v.setPadding(pad, pad, pad, pad)
                   }
+              }
+
+              override fun finish() {
+                  super.finish()
+                  Nav.close(this)
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/sharedl/app/BottomBarSettingsActivity.kt <<'EOF'
+          package com.sharedl.app
+
+          import android.app.Activity
+          import android.content.res.ColorStateList
+          import android.graphics.Color
+          import android.graphics.Typeface
+          import android.os.Bundle
+          import android.view.Gravity
+          import android.view.View
+          import android.widget.FrameLayout
+          import android.widget.ImageView
+          import android.widget.LinearLayout
+          import android.widget.ScrollView
+          import android.widget.SeekBar
+          import android.widget.TextView
+
+          class BottomBarSettingsActivity : Activity() {
+
+              private val specs = BarPrefs.bottomSpecs
+              private val cur = IntArray(specs.size)
+              private val seekBars = ArrayList<SeekBar>()
+              private val valueViews = ArrayList<TextView>()
+              private lateinit var prevV: ImageView
+              private lateinit var playV: RepeatIconView
+              private lateinit var nextV: ImageView
+
+              private fun dp(x: Int) = Ui.dp(this, x)
+
+              private fun tv(s: String, size: Float, color: Int, bold: Boolean = false): TextView {
+                  val t = TextView(this)
+                  t.text = s
+                  t.textSize = size
+                  t.setTextColor(color)
+                  if (bold) t.setTypeface(t.typeface, Typeface.BOLD)
+                  return t
+              }
+
+              private fun lp(top: Int): LinearLayout.LayoutParams {
+                  val p = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                  p.topMargin = dp(top)
+                  return p
+              }
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  window.statusBarColor = Ui.BG_TOP
+                  window.navigationBarColor = Ui.BG_BOTTOM
+                  for (i in specs.indices) cur[i] = BarPrefs.get(this, specs[i])
+
+                  val root = LinearLayout(this)
+                  root.orientation = LinearLayout.VERTICAL
+                  root.background = Ui.pageBg()
+                  root.layoutDirection = View.LAYOUT_DIRECTION_RTL
+
+                  val bar = LinearLayout(this)
+                  bar.orientation = LinearLayout.HORIZONTAL
+                  bar.gravity = Gravity.CENTER_VERTICAL
+                  bar.setPadding(dp(8), dp(14), dp(12), dp(10))
+                  val back = tv("→", 24f, Ui.TEXT)
+                  back.setPadding(dp(12), dp(4), dp(12), dp(4))
+                  back.setOnClickListener { onBackPressed() }
+                  bar.addView(back)
+                  bar.addView(tv("نوار پایین", 19f, Ui.TEXT, true), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                  val reset = tv("بازنشانی", 13f, Ui.GREEN, true)
+                  reset.setPadding(dp(10), dp(8), dp(10), dp(8))
+                  reset.setOnClickListener { resetAll() }
+                  bar.addView(reset)
+                  root.addView(bar)
+
+                  val scroll = ScrollView(this)
+                  val body = LinearLayout(this)
+                  body.orientation = LinearLayout.VERTICAL
+                  body.setPadding(dp(16), dp(4), dp(16), dp(24))
+                  scroll.addView(body)
+                  root.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+
+                  // ---- live preview ----
+                  body.addView(tv("پیش‌نمایش نوار پایین پخش‌کننده", 12.5f, Ui.MUTED), lp(0))
+                  val box = FrameLayout(this)
+                  box.background = Ui.rect(this, Color.BLACK, 18, Ui.CARD_STROKE, 1)
+                  box.layoutDirection = View.LAYOUT_DIRECTION_LTR
+
+                  val row = LinearLayout(this)
+                  row.orientation = LinearLayout.HORIZONTAL
+                  row.gravity = Gravity.CENTER
+
+                  prevV = ImageView(this)
+                  prevV.setImageResource(R.drawable.ic_prev)
+                  prevV.scaleType = ImageView.ScaleType.CENTER_INSIDE
+                  prevV.setPadding(dp(8), dp(8), dp(8), dp(8))
+                  playV = RepeatIconView(this)
+                  playV.kind = 3
+                  playV.setPadding(dp(10), dp(10), dp(10), dp(10))
+                  nextV = ImageView(this)
+                  nextV.setImageResource(R.drawable.ic_next)
+                  nextV.scaleType = ImageView.ScaleType.CENTER_INSIDE
+                  nextV.setPadding(dp(8), dp(8), dp(8), dp(8))
+                  row.addView(prevV)
+                  row.addView(playV)
+                  row.addView(nextV)
+
+                  val rp = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM)
+                  rp.bottomMargin = dp(24)
+                  box.addView(row, rp)
+                  val bp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(250))
+                  bp.topMargin = dp(6)
+                  body.addView(box, bp)
+
+                  // ---- sliders, grouped per icon ----
+                  body.addView(group("آیکون پخش / توقف (وسط)", listOf(0, 1, 2)), lp(14))
+                  body.addView(group("آیکون ویدئوی قبلی", listOf(3, 4, 5)), lp(14))
+                  body.addView(group("آیکون ویدئوی بعدی", listOf(6, 7, 8)), lp(14))
+                  body.addView(group("فاصله بین آیکون‌ها", listOf(9, 10)), lp(14))
+
+                  applyPreview()
+                  setContentView(root)
+              }
+
+              private fun group(title: String, idx: List<Int>): View {
+                  val card = LinearLayout(this)
+                  card.orientation = LinearLayout.VERTICAL
+                  card.setPadding(dp(16), dp(14), dp(16), dp(10))
+                  card.background = Ui.rect(this, Ui.CARD, 20, Ui.CARD_STROKE, 1)
+                  card.addView(tv(title, 15f, Ui.GREEN, true))
+                  for (i in idx) addSlider(card, i)
+                  return card
+              }
+
+              private fun addSlider(card: LinearLayout, i: Int) {
+                  val s = specs[i]
+                  val head = LinearLayout(this)
+                  head.orientation = LinearLayout.HORIZONTAL
+                  head.gravity = Gravity.CENTER_VERTICAL
+                  head.addView(tv(s.title, 14f, Ui.TEXT, true), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                  val value = tv(cur[i].toString(), 13f, Ui.GREEN, true)
+                  head.addView(value)
+                  card.addView(head, lp(12))
+                  card.addView(tv(s.sub, 11.5f, Ui.MUTED))
+
+                  val sb = SeekBar(this)
+                  sb.layoutDirection = View.LAYOUT_DIRECTION_LTR
+                  sb.progressTintList = ColorStateList.valueOf(Ui.GREEN)
+                  sb.thumbTintList = ColorStateList.valueOf(Ui.GREEN)
+                  sb.progressBackgroundTintList = ColorStateList.valueOf(Ui.CARD_STROKE)
+                  sb.max = s.max - s.min
+                  sb.progress = cur[i] - s.min
+                  sb.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                      override fun onProgressChanged(b: SeekBar?, p: Int, fromUser: Boolean) {
+                          cur[i] = p + s.min
+                          value.text = cur[i].toString()
+                          BarPrefs.set(this@BottomBarSettingsActivity, s, cur[i])
+                          applyPreview()
+                      }
+
+                      override fun onStartTrackingTouch(b: SeekBar?) {}
+                      override fun onStopTrackingTouch(b: SeekBar?) {}
+                  })
+                  card.addView(sb, lp(4))
+                  seekBars.add(sb)
+                  valueViews.add(value)
+              }
+
+              private fun resetAll() {
+                  BarPrefs.resetList(this, specs)
+                  for (i in specs.indices) {
+                      cur[i] = specs[i].def
+                      seekBars[i].progress = specs[i].def - specs[i].min
+                      valueViews[i].text = specs[i].def.toString()
+                  }
+                  applyPreview()
+              }
+
+              private fun applyPreview() {
+                  BarPrefs.applyBottom(this, prevV, playV, nextV)
               }
 
               override fun finish() {
@@ -4188,9 +4419,10 @@ jobs:
                           false
                       }
                   }
-                  ctl.addView(prevBtn, lpOf(62))
-                  ctl.addView(playBtn, lpOf(84))
-                  ctl.addView(nextBtn, lpOf(62))
+                  BarPrefs.applyBottom(this, prevBtn, playBtn, nextBtn)
+                  ctl.addView(prevBtn)
+                  ctl.addView(playBtn)
+                  ctl.addView(nextBtn)
                   bottom.addView(ctl)
 
                   overlay.addView(
