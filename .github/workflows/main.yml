@@ -3949,6 +3949,11 @@ jobs:
                       field = v
                       invalidate()
                   }
+              var landscape = false // kind == 1: which phone is solid (portrait = front, landscape = back)
+                  set(v) {
+                      field = v
+                      invalidate()
+                  }
 
               private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                   color = Color.WHITE
@@ -4112,33 +4117,73 @@ jobs:
                       }
                       line.strokeWidth = 1.9f
                   } else if (kind == 1) {
-                      // portrait phone in front of a landscape phone, with two curved arrows
+                      // portrait phone (front) + landscape phone (back); the one matching the current orientation is solid & bright,
+                      // the other one is hollow & dim. Both arrows have clear solid heads.
+                      val dimA = 110
+                      val backOn = landscape
+                      val frontOn = !landscape
                       val bl = Path()
-                      bl.moveTo(7.5f, 8f); bl.lineTo(6.1f, 8f); bl.quadTo(4.5f, 8f, 4.5f, 9.6f)
-                      bl.lineTo(4.5f, 14.9f); bl.quadTo(4.5f, 16.5f, 6.1f, 16.5f); bl.lineTo(7.5f, 16.5f)
-                      c.drawPath(bl, line)
+                      bl.moveTo(6.6f, 8f); bl.lineTo(5f, 8f); bl.quadTo(3f, 8f, 3f, 10f)
+                      bl.lineTo(3f, 14f); bl.quadTo(3f, 16f, 5f, 16f); bl.lineTo(6.6f, 16f); bl.close()
                       val br = Path()
-                      br.moveTo(16f, 8f); br.lineTo(17.4f, 8f); br.quadTo(19f, 8f, 19f, 9.6f)
-                      br.lineTo(19f, 14.9f); br.quadTo(19f, 16.5f, 17.4f, 16.5f); br.lineTo(16f, 16.5f)
+                      br.moveTo(16.9f, 8f); br.lineTo(19f, 8f); br.quadTo(21f, 8f, 21f, 10f)
+                      br.lineTo(21f, 14f); br.quadTo(21f, 16f, 19f, 16f); br.lineTo(16.9f, 16f); br.close()
+                      if (backOn) {
+                          line.style = Paint.Style.FILL_AND_STROKE
+                          line.strokeWidth = 1f
+                          line.alpha = 255
+                      } else {
+                          line.style = Paint.Style.STROKE
+                          line.strokeWidth = 1.4f
+                          line.alpha = dimA
+                      }
+                      c.drawPath(bl, line)
                       c.drawPath(br, line)
+                      // side button of the back phone (same idea as the front phone's home button)
+                      line.style = Paint.Style.STROKE
+                      line.strokeWidth = 1.3f
+                      if (backOn) line.color = Color.BLACK
+                      c.drawLine(19.2f, 10.8f, 19.2f, 13.2f, line)
+                      line.color = Color.WHITE
                       val ph = Path()
-                      ph.addRoundRect(7.5f, 5.5f, 16f, 19f, 1.8f, 1.8f, Path.Direction.CW)
+                      ph.addRoundRect(7.5f, 5.2f, 16f, 19.2f, 1.8f, 1.8f, Path.Direction.CW)
+                      if (frontOn) {
+                          line.style = Paint.Style.FILL_AND_STROKE
+                          line.strokeWidth = 1f
+                          line.alpha = 255
+                      } else {
+                          line.style = Paint.Style.STROKE
+                          line.strokeWidth = 1.4f
+                          line.alpha = dimA
+                      }
                       c.drawPath(ph, line)
-                      c.drawLine(10.7f, 17.2f, 12.8f, 17.2f, line)
+                      line.style = Paint.Style.STROKE
+                      line.strokeWidth = 1.3f
+                      if (frontOn) line.color = Color.BLACK
+                      c.drawLine(10.7f, 17.3f, 12.8f, 17.3f, line)
+                      line.color = Color.WHITE
+                      // arrows
+                      line.alpha = 255
+                      line.strokeWidth = 1.7f
                       val ar = Path()
-                      ar.moveTo(13.5f, 2.8f)
-                      ar.quadTo(20f, 2.8f, 20.7f, 6.4f)
+                      ar.moveTo(13f, 2.3f)
+                      ar.quadTo(20.5f, 1.9f, 21f, 5f)
                       c.drawPath(ar, line)
-                      val h1 = Path()
-                      h1.moveTo(18.5f, 4.4f); h1.lineTo(20.7f, 6.6f); h1.lineTo(22.6f, 4.2f)
-                      c.drawPath(h1, line)
                       val ar2 = Path()
-                      ar2.moveTo(10.5f, 21.2f)
-                      ar2.quadTo(4f, 21.2f, 3.3f, 17.6f)
+                      ar2.moveTo(11f, 21.8f)
+                      ar2.quadTo(3.5f, 22.1f, 3f, 19f)
                       c.drawPath(ar2, line)
+                      line.style = Paint.Style.FILL_AND_STROKE
+                      line.strokeWidth = 0.8f
+                      line.strokeJoin = Paint.Join.ROUND
+                      val h1 = Path()
+                      h1.moveTo(18.5f, 4.6f); h1.lineTo(23.5f, 4.6f); h1.lineTo(21f, 7.6f); h1.close()
+                      c.drawPath(h1, line)
                       val h2 = Path()
-                      h2.moveTo(5.5f, 19.6f); h2.lineTo(3.3f, 17.4f); h2.lineTo(1.4f, 19.8f)
+                      h2.moveTo(0.5f, 19.4f); h2.lineTo(5.5f, 19.4f); h2.lineTo(3f, 16.4f); h2.close()
                       c.drawPath(h2, line)
+                      line.style = Paint.Style.STROKE
+                      line.strokeWidth = 1.9f
                   } else if (kind == 2) {
                       c.drawLine(4f, 6.5f, 20f, 6.5f, line)
                       val h = Path()
@@ -4501,9 +4546,9 @@ jobs:
                   repeatBtn.alpha = if (repeatMode == 3) 0.45f else 1f
               }
 
-              // rotate icon: dim in portrait, bright in landscape
+              // rotate icon: the phone that matches the current orientation is solid, the other hollow
               private fun updateRotIcon() {
-                  rotBtn.alpha = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) 1f else 0.45f
+                  rotBtn.landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
               }
 
               override fun onConfigurationChanged(newConfig: Configuration) {
