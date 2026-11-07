@@ -3008,10 +3008,14 @@ jobs:
                   Spec("brY", "جای عمودی", "بالا (منفی) ↔ پایین (مثبت)", -80, 80, 0),
                   Spec("bgA", "فاصله لیست تکرار تا قبلی", "فاصله بین آیکون لیست تکرار و آیکون قبلی", 0, 80, 4),
                   Spec("bgT", "فاصله بعدی تا تغییر اندازه تصویر", "فاصله بین آیکون بعدی و آیکون تغییر اندازه تصویر", 0, 80, 4),
-                  Spec("bsSize", "اندازه", "اندازه آیکون ذخیره خودکار آخرین نقطه تماشا", 30, 120, 40),
+                  Spec("bsSize", "اندازه", "اندازه آیکون ذخیره خودکار آخرین نقطه تماشا", 30, 120, 42),
                   Spec("bsX", "جای افقی", "چپ (منفی) ↔ راست (مثبت)", -80, 80, 0),
                   Spec("bsY", "جای عمودی", "بالا (منفی) ↔ پایین (مثبت)", -80, 80, 0),
-                  Spec("bgS", "فاصله ذخیره تماشا تا لیست تکرار", "فاصله بین آیکون ذخیره آخرین نقطه تماشا و آیکون لیست تکرار", 0, 80, 2)
+                  Spec("bgS", "فاصله ذخیره تماشا تا لیست تکرار", "فاصله بین آیکون ذخیره آخرین نقطه تماشا و آیکون لیست تکرار", 0, 80, 4),
+                  Spec("brtSize", "اندازه", "اندازه آیکون چرخش صفحه", 30, 120, 42),
+                  Spec("brtX", "جای افقی", "چپ (منفی) ↔ راست (مثبت)", -80, 80, 0),
+                  Spec("brtY", "جای عمودی", "بالا (منفی) ↔ پایین (مثبت)", -80, 80, 0),
+                  Spec("bgQ", "فاصله تغییر اندازه تصویر تا چرخش صفحه", "فاصله بین آیکون تغییر اندازه تصویر و آیکون چرخش صفحه", 0, 80, 4)
               )
 
               // Progress bars: 0 = visible bar above the bottom icons, 1 = invisible bar that appears while dragging on the video
@@ -3031,7 +3035,7 @@ jobs:
               }
 
               // Applies the saved bottom-bar layout to the three icons (used by the player and by the preview)
-              fun applyBottom(c: Context, prev: View, play: View, next: View, aspect: View, repeat: View, resume: View) {
+              fun applyBottom(c: Context, prev: View, play: View, next: View, aspect: View, repeat: View, resume: View, rotate: View) {
                   fun g(i: Int) = get(c, bottomSpecs[i])
                   fun d(x: Int) = Ui.dp(c, x)
                   // Each icon changes only its OWN drawn size. Its layout slot keeps the default
@@ -3051,7 +3055,11 @@ jobs:
                   prev.layoutParams = lpOf(3, g(9))
                   play.layoutParams = lpOf(0, g(10))
                   next.layoutParams = lpOf(6, g(18))
-                  aspect.layoutParams = lpOf(11, 0)
+                  aspect.layoutParams = lpOf(11, g(26))
+                  rotate.layoutParams = lpOf(23, 0)
+                  val tv0 = d(g(23)) / 5
+                  rotate.setPadding(tv0, tv0, tv0, tv0)
+                  rotate.translationX = d(g(24)).toFloat(); rotate.translationY = d(g(25)).toFloat()
                   repeat.layoutParams = lpOf(14, g(17))
                   resume.layoutParams = lpOf(19, g(22))
                   val sv = d(g(19)) / 5
@@ -3432,7 +3440,7 @@ jobs:
                       return v
                   }
 
-                  previewTop.addView(icon(1, 0.6f))
+                  previewTop.addView(icon(7, 0.6f))
                   val rep = icon(0, 1f)
                   rep.mode = 1
                   previewTop.addView(rep)
@@ -3563,6 +3571,7 @@ jobs:
               private lateinit var aspectV: RepeatIconView
               private lateinit var repeatV: RepeatIconView
               private lateinit var resumeV: RepeatIconView
+              private lateinit var rotV: RepeatIconView
 
               private fun dp(x: Int) = Ui.dp(this, x)
 
@@ -3647,7 +3656,10 @@ jobs:
                   row.addView(prevV)
                   row.addView(playV)
                   row.addView(nextV)
+                  rotV = RepeatIconView(this)
+                  rotV.kind = 1
                   row.addView(aspectV)
+                  row.addView(rotV)
 
                   val rp = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM)
                   rp.bottomMargin = dp(24)
@@ -3663,7 +3675,8 @@ jobs:
                   body.addView(group("آیکون تغییر اندازه تصویر (سمت راست آیکون بعدی)", listOf(11, 12, 13)), lp(14))
                   body.addView(group("آیکون لیست تکرار (سمت چپ آیکون قبلی)", listOf(14, 15, 16)), lp(14))
                   body.addView(group("آیکون ذخیره آخرین نقطه تماشا (سمت چپ لیست تکرار)", listOf(19, 20, 21)), lp(14))
-                  body.addView(group("فاصله بین آیکون‌ها", listOf(9, 10, 17, 18, 22)), lp(14))
+                  body.addView(group("آیکون چرخش صفحه (سمت راست تغییر اندازه تصویر)", listOf(23, 24, 25)), lp(14))
+                  body.addView(group("فاصله بین آیکون‌ها", listOf(9, 10, 17, 18, 22, 26)), lp(14))
 
                   applyPreview()
                   setContentView(root)
@@ -3724,7 +3737,7 @@ jobs:
               }
 
               private fun applyPreview() {
-                  BarPrefs.applyBottom(this, prevV, playV, nextV, aspectV, repeatV, resumeV)
+                  BarPrefs.applyBottom(this, prevV, playV, nextV, aspectV, repeatV, resumeV, rotV)
               }
 
               override fun finish() {
@@ -3931,6 +3944,11 @@ jobs:
                       field = v
                       invalidate()
                   }
+              var locked = false // kind == 7: closed padlock when true
+                  set(v) {
+                      field = v
+                      invalidate()
+                  }
 
               private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                   color = Color.WHITE
@@ -4040,36 +4058,66 @@ jobs:
                               // original size: plain frame
                           }
                       }
+                  } else if (kind == 7) {
+                      // padlock: open (outline) or closed (solid)
+                      val sh = Path()
+                      sh.moveTo(8f, 10.5f)
+                      sh.lineTo(8f, 7f)
+                      sh.arcTo(android.graphics.RectF(8f, 3f, 16f, 11f), 180f, 180f, false)
+                      if (locked) sh.lineTo(16f, 10.5f) else sh.lineTo(16f, 8.6f)
+                      c.drawPath(sh, line)
+                      val body = Path()
+                      body.addRoundRect(5f, 10.5f, 19f, 21.5f, 2.5f, 2.5f, Path.Direction.CW)
+                      if (locked) {
+                          line.style = Paint.Style.FILL_AND_STROKE
+                          line.strokeWidth = 1.2f
+                          c.drawPath(body, line)
+                          line.color = Color.BLACK
+                          line.style = Paint.Style.FILL
+                          c.drawCircle(12f, 16f, 1.5f, line)
+                          line.color = Color.WHITE
+                      } else {
+                          c.drawPath(body, line)
+                          line.style = Paint.Style.FILL
+                          c.drawCircle(12f, 16f, 1.3f, line)
+                      }
+                      line.style = Paint.Style.STROKE
+                      line.strokeWidth = 1.9f
                   } else if (kind == 6) {
-                      // resume position: circular arrow + play + clock (+ floppy in the top-right when ON)
+                      // resume position: rounded square frame with circular arrow + play + clock (+ floppy top-right when ON)
+                      line.strokeWidth = 1.7f
+                      val frame = Path()
+                      frame.addRoundRect(1.5f, 1.5f, 22.5f, 22.5f, 5.5f, 5.5f, Path.Direction.CW)
+                      c.drawPath(frame, line)
+                      line.strokeWidth = 1.4f
                       val arc = Path()
-                      arc.arcTo(android.graphics.RectF(3f, 5f, 18f, 20f), -75f, -205f, true)
+                      arc.arcTo(android.graphics.RectF(4.9f, 7.4f, 16.1f, 18.6f), -75f, -205f, true)
                       c.drawPath(arc, line)
-                      val ex = 10.5f + 7.5f * Math.cos(Math.toRadians(80.0)).toFloat() + 2.2f
-                      val ey = 12.5f + 7.5f * Math.sin(Math.toRadians(80.0)).toFloat()
+                      val ex = 10.5f + 5.6f * Math.cos(Math.toRadians(80.0)).toFloat() + 1.9f
+                      val ey = 13f + 5.6f * Math.sin(Math.toRadians(80.0)).toFloat()
                       val head = Path()
-                      head.moveTo(ex - 2.6f, ey - 2.6f)
+                      head.moveTo(ex - 2f, ey - 2f)
                       head.lineTo(ex, ey)
-                      head.lineTo(ex - 2.6f, ey + 2.6f)
+                      head.lineTo(ex - 2f, ey + 2f)
                       c.drawPath(head, line)
                       line.style = Paint.Style.FILL_AND_STROKE
-                      line.strokeWidth = 1.2f
+                      line.strokeWidth = 1f
                       val tri = Path()
-                      tri.moveTo(8.6f, 9f); tri.lineTo(8.6f, 16f); tri.lineTo(14.3f, 12.5f); tri.close()
+                      tri.moveTo(8.9f, 10.3f); tri.lineTo(8.9f, 15.7f); tri.lineTo(13.3f, 13f); tri.close()
                       c.drawPath(tri, line)
                       line.style = Paint.Style.STROKE
-                      line.strokeWidth = 1.7f
-                      c.drawCircle(18.4f, 18.4f, 3.5f, line)
-                      line.strokeWidth = 1.4f
-                      c.drawLine(18.4f, 16.5f, 18.4f, 18.4f, line)
-                      c.drawLine(18.4f, 18.4f, 20.1f, 18.4f, line)
+                      line.strokeWidth = 1.3f
+                      c.drawCircle(16.8f, 17f, 2.9f, line)
+                      line.strokeWidth = 1.1f
+                      c.drawLine(16.8f, 15.5f, 16.8f, 17f, line)
+                      c.drawLine(16.8f, 17f, 18f, 17f, line)
                       if (resumeOn) {
-                          line.strokeWidth = 1.3f
+                          line.strokeWidth = 1.1f
                           val fl = Path()
-                          fl.addRoundRect(16.3f, 1.2f, 23f, 7.9f, 1.2f, 1.2f, Path.Direction.CW)
+                          fl.addRoundRect(14.2f, 3.6f, 19.8f, 9.2f, 1f, 1f, Path.Direction.CW)
                           c.drawPath(fl, line)
-                          c.drawRect(17.9f, 1.2f, 21.4f, 3.8f, line)
-                          c.drawRect(17.6f, 5.1f, 21.7f, 7.9f, line)
+                          c.drawRect(15.3f, 3.6f, 18.4f, 5.4f, line)
+                          c.drawRect(15.1f, 6.6f, 18.9f, 9.2f, line)
                       }
                       line.strokeWidth = 1.9f
                   } else if (kind == 1) {
@@ -4244,6 +4292,10 @@ jobs:
               private var repeatMode = 3
               private lateinit var repeatBtn: RepeatIconView
               private lateinit var resumeBtn: RepeatIconView
+              private lateinit var rotBtn: RepeatIconView
+              private lateinit var lockBtn: RepeatIconView
+              private var trashView: View? = null
+              private var locked = false
               private var resumeEnabled = false
               private var prepared = false
               private var bottomBarView: View? = null
@@ -4447,6 +4499,44 @@ jobs:
               private fun updateRepeatIcon() {
                   repeatBtn.mode = repeatMode
                   repeatBtn.alpha = if (repeatMode == 3) 0.45f else 1f
+              }
+
+              // ---------------- lock video + pin screen ----------------
+              private fun applyLockUi() {
+                  lockBtn.locked = locked
+                  lockBtn.alpha = if (locked) 1f else 0.6f
+                  bottomBarView?.visibility = if (locked) View.GONE else View.VISIBLE
+                  trashView?.visibility = if (locked) View.INVISIBLE else View.VISIBLE
+                  titleView.visibility = if (locked) View.INVISIBLE else View.VISIBLE
+              }
+
+              private fun toggleLock() {
+                  locked = !locked
+                  applyLockUi()
+                  try {
+                      if (locked) startLockTask() else stopLockTask()
+                  } catch (e: Exception) {
+                  }
+                  showHud(if (locked) "🔒 ویدئو قفل شد" else "🔓 قفل باز شد")
+                  showOverlay()
+              }
+
+              override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+                  if (locked) {
+                      val k = event.keyCode
+                      if (k == android.view.KeyEvent.KEYCODE_BACK || k == android.view.KeyEvent.KEYCODE_MEDIA_NEXT ||
+                          k == android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS || k == android.view.KeyEvent.KEYCODE_MEDIA_FAST_FORWARD ||
+                          k == android.view.KeyEvent.KEYCODE_MEDIA_REWIND || k == android.view.KeyEvent.KEYCODE_MEDIA_STOP ||
+                          k == android.view.KeyEvent.KEYCODE_DPAD_LEFT || k == android.view.KeyEvent.KEYCODE_DPAD_RIGHT
+                      ) {
+                          if (k == android.view.KeyEvent.KEYCODE_BACK && event.action == android.view.KeyEvent.ACTION_UP) {
+                              showHud("🔒 برای خروج، اول قفل را باز کن")
+                              showOverlay()
+                          }
+                          return true
+                      }
+                  }
+                  return super.dispatchKeyEvent(event)
               }
 
               // ---------------- remember last watch position ----------------
@@ -4654,6 +4744,11 @@ jobs:
               }
 
               private fun onGesture(e: MotionEvent, w: Int, h: Int): Boolean {
+                  if (locked) {
+                      // video is locked: no seeking, no skipping, no zoom/volume gestures; a tap only shows the lock icon
+                      if (e.action == MotionEvent.ACTION_UP) showOverlay()
+                      return true
+                  }
                   scaleDet.onTouchEvent(e)
                   if (e.pointerCount > 1 && mode != 4) {
                       // two fingers: pinch zoom only, cancel any seek / volume / tap in progress
@@ -4791,6 +4886,7 @@ jobs:
                   }
                   if (savedInstanceState != null) {
                       pos = savedInstanceState.getInt("pos", 0)
+                      locked = savedInstanceState.getBoolean("locked", false)
                       index = savedInstanceState.getInt("index", index).coerceIn(0, uris.size - 1)
                   }
 
@@ -4835,11 +4931,18 @@ jobs:
                   top.setPadding(dp(BarPrefs.x(this)), dp(BarPrefs.y(this)), dp(BarPrefs.x(this)), dp(28))
                   top.background = shade(true)
 
-                  val rot = RepeatIconView(this)
-                  rot.kind = 1
-                  rot.alpha = 0.6f
-                  rot.setPadding(barPad(), barPad(), barPad(), barPad())
-                  rot.setOnClickListener {
+                  // lock icon (top-left): open padlock = off, closed padlock = video locked + screen pinned
+                  lockBtn = RepeatIconView(this)
+                  lockBtn.kind = 7
+                  lockBtn.alpha = 0.6f
+                  lockBtn.setPadding(barPad(), barPad(), barPad(), barPad())
+                  lockBtn.setOnClickListener { toggleLock() }
+                  top.addView(lockBtn, topLp())
+
+                  // rotate-screen icon now lives in the bottom bar
+                  rotBtn = RepeatIconView(this)
+                  rotBtn.kind = 1
+                  rotBtn.setOnClickListener {
                       requestedOrientation =
                           if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE)
                               ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
@@ -4847,7 +4950,6 @@ jobs:
                               ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
                       showOverlay()
                   }
-                  top.addView(rot, topLp())
 
                   repeatBtn = RepeatIconView(this)
                   repeatBtn.setPadding(barPad(), barPad(), barPad(), barPad())
@@ -4879,6 +4981,7 @@ jobs:
                   trash.alpha = 0.6f
                   trash.setPadding(barPad(), barPad(), barPad(), barPad())
                   trash.setOnClickListener { confirmDeleteCurrent() }
+                  trashView = trash
                   top.addView(trash, topLp())
 
                   overlay.addView(
@@ -4968,19 +5071,20 @@ jobs:
                       p.marginEnd = dp(6)
                       return p
                   }
-                  for (hb in listOf<View>(aspectBtn, prevBtn, playBtn, nextBtn, repeatBtn, resumeBtn)) {
+                  for (hb in listOf<View>(aspectBtn, prevBtn, playBtn, nextBtn, repeatBtn, resumeBtn, rotBtn)) {
                       hb.setOnTouchListener { v, e ->
                           if (e.action == MotionEvent.ACTION_DOWN) haptic(v)
                           false
                       }
                   }
-                  BarPrefs.applyBottom(this, prevBtn, playBtn, nextBtn, aspectBtn, repeatBtn, resumeBtn)
+                  BarPrefs.applyBottom(this, prevBtn, playBtn, nextBtn, aspectBtn, repeatBtn, resumeBtn, rotBtn)
                   ctl.addView(resumeBtn)
                   ctl.addView(repeatBtn)
                   ctl.addView(prevBtn)
                   ctl.addView(playBtn)
                   ctl.addView(nextBtn)
                   ctl.addView(aspectBtn)
+                  ctl.addView(rotBtn)
                   bottom.addView(ctl)
 
                   overlay.addView(
@@ -5064,6 +5168,7 @@ jobs:
                   }
                   setContentView(root)
                   updateNav()
+                  applyLockUi()
 
                   vv.setOnPreparedListener { mp ->
                       mpRef = mp
@@ -5088,6 +5193,11 @@ jobs:
                       quietLoad = false
                       }
                       vv.setOnCompletionListener {
+                          if (locked) {
+                              vv.seekTo(0)
+                              vv.start()
+                              return@setOnCompletionListener
+                          }
                           if (repeatMode == 0 || repeatMode == 2) {
                               if (index < uris.size - 1) {
                                   goNext(true)
@@ -5129,15 +5239,27 @@ jobs:
                   super.onSaveInstanceState(outState)
                   outState.putInt("pos", vv.currentPosition)
                   outState.putInt("index", index)
+                  outState.putBoolean("locked", locked)
               }
 
               override fun onDestroy() {
                   ui.removeCallbacksAndMessages(null)
+                  if (locked && isFinishing) {
+                      try {
+                          stopLockTask()
+                      } catch (e: Exception) {
+                      }
+                  }
                   vv.stopPlayback()
                   super.onDestroy()
               }
 
               override fun onBackPressed() {
+                  if (locked) {
+                      showHud("🔒 برای خروج، اول قفل را باز کن")
+                      showOverlay()
+                      return
+                  }
                   if (intent.getBooleanExtra("fromNotif", false)) {
                       // Opened from the notification: close the video and the whole app.
                       finishAndRemoveTask()
