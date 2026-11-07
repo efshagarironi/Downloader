@@ -4123,11 +4123,7 @@ jobs:
                       val backOn = landscape
                       val frontOn = !landscape
                       val bl = Path()
-                      bl.moveTo(6.6f, 8f); bl.lineTo(5f, 8f); bl.quadTo(3f, 8f, 3f, 10f)
-                      bl.lineTo(3f, 14f); bl.quadTo(3f, 16f, 5f, 16f); bl.lineTo(6.6f, 16f); bl.close()
-                      val br = Path()
-                      br.moveTo(16.9f, 8f); br.lineTo(19f, 8f); br.quadTo(21f, 8f, 21f, 10f)
-                      br.lineTo(21f, 14f); br.quadTo(21f, 16f, 19f, 16f); br.lineTo(16.9f, 16f); br.close()
+                      bl.addRoundRect(3f, 8f, 21f, 16f, 2f, 2f, Path.Direction.CW)
                       val ph = Path()
                       ph.addRoundRect(7.5f, 5.2f, 16f, 19.2f, 1.8f, 1.8f, Path.Direction.CW)
                       // landscape phone
@@ -4142,7 +4138,6 @@ jobs:
                               line.alpha = dimA
                           }
                           c.drawPath(bl, line)
-                          c.drawPath(br, line)
                           line.style = Paint.Style.STROKE
                           line.strokeWidth = 1.3f
                           if (backOn) line.color = Color.BLACK
