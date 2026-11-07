@@ -3007,7 +3007,11 @@ jobs:
                   Spec("brX", "جای افقی", "چپ (منفی) ↔ راست (مثبت)", -80, 80, 0),
                   Spec("brY", "جای عمودی", "بالا (منفی) ↔ پایین (مثبت)", -80, 80, 0),
                   Spec("bgA", "فاصله لیست تکرار تا قبلی", "فاصله بین آیکون لیست تکرار و آیکون قبلی", 0, 80, 4),
-                  Spec("bgT", "فاصله بعدی تا تغییر اندازه تصویر", "فاصله بین آیکون بعدی و آیکون تغییر اندازه تصویر", 0, 80, 4)
+                  Spec("bgT", "فاصله بعدی تا تغییر اندازه تصویر", "فاصله بین آیکون بعدی و آیکون تغییر اندازه تصویر", 0, 80, 4),
+                  Spec("bsSize", "اندازه", "اندازه آیکون ذخیره خودکار آخرین نقطه تماشا", 30, 120, 40),
+                  Spec("bsX", "جای افقی", "چپ (منفی) ↔ راست (مثبت)", -80, 80, 0),
+                  Spec("bsY", "جای عمودی", "بالا (منفی) ↔ پایین (مثبت)", -80, 80, 0),
+                  Spec("bgS", "فاصله ذخیره تماشا تا لیست تکرار", "فاصله بین آیکون ذخیره آخرین نقطه تماشا و آیکون لیست تکرار", 0, 80, 2)
               )
 
               // Progress bars: 0 = visible bar above the bottom icons, 1 = invisible bar that appears while dragging on the video
@@ -3027,7 +3031,7 @@ jobs:
               }
 
               // Applies the saved bottom-bar layout to the three icons (used by the player and by the preview)
-              fun applyBottom(c: Context, prev: View, play: View, next: View, aspect: View, repeat: View) {
+              fun applyBottom(c: Context, prev: View, play: View, next: View, aspect: View, repeat: View, resume: View) {
                   fun g(i: Int) = get(c, bottomSpecs[i])
                   fun d(x: Int) = Ui.dp(c, x)
                   // Each icon changes only its OWN drawn size. Its layout slot keeps the default
@@ -3049,6 +3053,10 @@ jobs:
                   next.layoutParams = lpOf(6, g(18))
                   aspect.layoutParams = lpOf(11, 0)
                   repeat.layoutParams = lpOf(14, g(17))
+                  resume.layoutParams = lpOf(19, g(22))
+                  val sv = d(g(19)) / 5
+                  resume.setPadding(sv, sv, sv, sv)
+                  resume.translationX = d(g(20)).toFloat(); resume.translationY = d(g(21)).toFloat()
                   val av = d(g(11)) / 5
                   aspect.setPadding(av, av, av, av)
                   val rv = d(g(14)) / 5
@@ -3554,6 +3562,7 @@ jobs:
               private lateinit var nextV: ImageView
               private lateinit var aspectV: RepeatIconView
               private lateinit var repeatV: RepeatIconView
+              private lateinit var resumeV: RepeatIconView
 
               private fun dp(x: Int) = Ui.dp(this, x)
 
@@ -3630,6 +3639,10 @@ jobs:
                   aspectV.kind = 5
                   repeatV = RepeatIconView(this)
                   repeatV.mode = 0
+                  resumeV = RepeatIconView(this)
+                  resumeV.kind = 6
+                  resumeV.resumeOn = true
+                  row.addView(resumeV)
                   row.addView(repeatV)
                   row.addView(prevV)
                   row.addView(playV)
@@ -3649,7 +3662,8 @@ jobs:
                   body.addView(group("آیکون ویدئوی بعدی", listOf(6, 7, 8)), lp(14))
                   body.addView(group("آیکون تغییر اندازه تصویر (سمت راست آیکون بعدی)", listOf(11, 12, 13)), lp(14))
                   body.addView(group("آیکون لیست تکرار (سمت چپ آیکون قبلی)", listOf(14, 15, 16)), lp(14))
-                  body.addView(group("فاصله بین آیکون‌ها", listOf(9, 10, 17, 18)), lp(14))
+                  body.addView(group("آیکون ذخیره آخرین نقطه تماشا (سمت چپ لیست تکرار)", listOf(19, 20, 21)), lp(14))
+                  body.addView(group("فاصله بین آیکون‌ها", listOf(9, 10, 17, 18, 22)), lp(14))
 
                   applyPreview()
                   setContentView(root)
@@ -3710,7 +3724,7 @@ jobs:
               }
 
               private fun applyPreview() {
-                  BarPrefs.applyBottom(this, prevV, playV, nextV, aspectV, repeatV)
+                  BarPrefs.applyBottom(this, prevV, playV, nextV, aspectV, repeatV, resumeV)
               }
 
               override fun finish() {
@@ -3912,6 +3926,11 @@ jobs:
                       field = v
                       invalidate()
                   }
+              var resumeOn = true // kind == 6: with the floppy when on, without it when off
+                  set(v) {
+                      field = v
+                      invalidate()
+                  }
 
               private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                   color = Color.WHITE
@@ -4021,6 +4040,38 @@ jobs:
                               // original size: plain frame
                           }
                       }
+                  } else if (kind == 6) {
+                      // resume position: circular arrow + play + clock (+ floppy in the top-right when ON)
+                      val arc = Path()
+                      arc.arcTo(android.graphics.RectF(3f, 5f, 18f, 20f), -75f, -205f, true)
+                      c.drawPath(arc, line)
+                      val ex = 10.5f + 7.5f * Math.cos(Math.toRadians(80.0)).toFloat() + 2.2f
+                      val ey = 12.5f + 7.5f * Math.sin(Math.toRadians(80.0)).toFloat()
+                      val head = Path()
+                      head.moveTo(ex - 2.6f, ey - 2.6f)
+                      head.lineTo(ex, ey)
+                      head.lineTo(ex - 2.6f, ey + 2.6f)
+                      c.drawPath(head, line)
+                      line.style = Paint.Style.FILL_AND_STROKE
+                      line.strokeWidth = 1.2f
+                      val tri = Path()
+                      tri.moveTo(8.6f, 9f); tri.lineTo(8.6f, 16f); tri.lineTo(14.3f, 12.5f); tri.close()
+                      c.drawPath(tri, line)
+                      line.style = Paint.Style.STROKE
+                      line.strokeWidth = 1.7f
+                      c.drawCircle(18.4f, 18.4f, 3.5f, line)
+                      line.strokeWidth = 1.4f
+                      c.drawLine(18.4f, 16.5f, 18.4f, 18.4f, line)
+                      c.drawLine(18.4f, 18.4f, 20.1f, 18.4f, line)
+                      if (resumeOn) {
+                          line.strokeWidth = 1.3f
+                          val fl = Path()
+                          fl.addRoundRect(16.3f, 1.2f, 23f, 7.9f, 1.2f, 1.2f, Path.Direction.CW)
+                          c.drawPath(fl, line)
+                          c.drawRect(17.9f, 1.2f, 21.4f, 3.8f, line)
+                          c.drawRect(17.6f, 5.1f, 21.7f, 7.9f, line)
+                      }
+                      line.strokeWidth = 1.9f
                   } else if (kind == 1) {
                       // tilted phone (long side from top-left to bottom-right) with two curved arrows (top-right and bottom-left)
                       c.save()
@@ -4192,6 +4243,9 @@ jobs:
               // repeat: 0 = repeat playlist, 1 = repeat one video, 2 = play playlist once, 3 = off (play this video once)
               private var repeatMode = 3
               private lateinit var repeatBtn: RepeatIconView
+              private lateinit var resumeBtn: RepeatIconView
+              private var resumeEnabled = false
+              private var prepared = false
               private var bottomBarView: View? = null
               private val hideArrow = Runnable { edgeArrow.visibility = View.GONE }
 
@@ -4395,6 +4449,36 @@ jobs:
                   repeatBtn.alpha = if (repeatMode == 3) 0.45f else 1f
               }
 
+              // ---------------- remember last watch position ----------------
+              private fun updateResumeIcon() {
+                  resumeBtn.resumeOn = resumeEnabled
+                  resumeBtn.alpha = if (resumeEnabled) 1f else 0.45f
+              }
+
+              private fun toggleResume() {
+                  resumeEnabled = !resumeEnabled
+                  getSharedPreferences("prefs", MODE_PRIVATE).edit().putBoolean("resume_on", resumeEnabled).apply()
+                  updateResumeIcon()
+                  showHud(if (resumeEnabled) "ذخیره آخرین نقطه تماشا: روشن" else "ذخیره آخرین نقطه تماشا: خاموش")
+                  showOverlay()
+              }
+
+              // Saves the exact playing time of the current video (called when leaving the video / the player)
+              private fun saveResume() {
+                  if (!resumeEnabled || !prepared || index !in uris.indices) return
+                  var p = vv.currentPosition
+                  if (p == 0 && pos > 0) p = pos
+                  val d = vv.duration
+                  val e = getSharedPreferences("resume", MODE_PRIVATE).edit()
+                  if (p < 3000 || (d > 0 && p >= d - 3000)) e.remove(uris[index]) else e.putInt(uris[index], p)
+                  e.apply()
+              }
+
+              private fun savedResume(): Int {
+                  if (!resumeEnabled || index !in uris.indices) return 0
+                  return getSharedPreferences("resume", MODE_PRIVATE).getInt(uris[index], 0)
+              }
+
               private fun cycleRepeat() {
                   repeatMode = (repeatMode + 1) % 4
                   getSharedPreferences("prefs", MODE_PRIVATE).edit().putInt("repeat", repeatMode).apply()
@@ -4434,6 +4518,8 @@ jobs:
 
               private fun loadAt(i: Int) {
                   if (i < 0 || i >= uris.size) return
+                  saveResume()
+                  prepared = false
                   index = i
                   pos = 0
                   titleView.text = titles.getOrElse(i) { "" }
@@ -4690,6 +4776,7 @@ jobs:
                   slop = ViewConfiguration.get(this).scaledTouchSlop
                   repeatMode = getSharedPreferences("prefs", MODE_PRIVATE).getInt("repeat", 3).coerceIn(0, 3)
                   aspectMode = getSharedPreferences("prefs", MODE_PRIVATE).getInt("aspect", 0).coerceIn(0, 3)
+                  resumeEnabled = getSharedPreferences("prefs", MODE_PRIVATE).getBoolean("resume_on", false)
 
                   val listU = intent.getStringArrayExtra("uris")
                   val listT = intent.getStringArrayExtra("titles")
@@ -4766,6 +4853,12 @@ jobs:
                   repeatBtn.setPadding(barPad(), barPad(), barPad(), barPad())
                   repeatBtn.setOnClickListener { cycleRepeat() }
                   updateRepeatIcon()
+
+                  resumeBtn = RepeatIconView(this)
+                  resumeBtn.kind = 6
+                  resumeBtn.setPadding(barPad(), barPad(), barPad(), barPad())
+                  resumeBtn.setOnClickListener { toggleResume() }
+                  updateResumeIcon()
 
                   aspectBtn = RepeatIconView(this)
                   aspectBtn.kind = 5
@@ -4875,13 +4968,14 @@ jobs:
                       p.marginEnd = dp(6)
                       return p
                   }
-                  for (hb in listOf<View>(aspectBtn, prevBtn, playBtn, nextBtn, repeatBtn)) {
+                  for (hb in listOf<View>(aspectBtn, prevBtn, playBtn, nextBtn, repeatBtn, resumeBtn)) {
                       hb.setOnTouchListener { v, e ->
                           if (e.action == MotionEvent.ACTION_DOWN) haptic(v)
                           false
                       }
                   }
-                  BarPrefs.applyBottom(this, prevBtn, playBtn, nextBtn, aspectBtn, repeatBtn)
+                  BarPrefs.applyBottom(this, prevBtn, playBtn, nextBtn, aspectBtn, repeatBtn, resumeBtn)
+                  ctl.addView(resumeBtn)
                   ctl.addView(repeatBtn)
                   ctl.addView(prevBtn)
                   ctl.addView(playBtn)
@@ -4980,6 +5074,14 @@ jobs:
                           if (mode == 1 && scrubPending >= 0) issueScrub()
                       }
                       mp.isLooping = (repeatMode == 1)
+                      prepared = true
+                      if (pos == 0) {
+                          val sp = savedResume()
+                          if (sp > 0 && (mp.duration <= 0 || sp < mp.duration - 3000)) {
+                              pos = sp
+                              showHud("▶ ادامه از " + Ui.dur(sp.toLong()))
+                          }
+                      }
                       if (pos > 0) vv.seekTo(pos)
                       vv.start()
                       if (!quietLoad) showOverlay()
@@ -5016,6 +5118,7 @@ jobs:
 
               override fun onPause() {
                   pos = vv.currentPosition
+                  saveResume()
                   vv.pause()
                   ui.removeCallbacks(tickRun)
                   ui.removeCallbacks(hideRun)
