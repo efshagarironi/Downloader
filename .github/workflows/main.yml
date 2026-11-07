@@ -4128,40 +4128,53 @@ jobs:
                       val br = Path()
                       br.moveTo(16.9f, 8f); br.lineTo(19f, 8f); br.quadTo(21f, 8f, 21f, 10f)
                       br.lineTo(21f, 14f); br.quadTo(21f, 16f, 19f, 16f); br.lineTo(16.9f, 16f); br.close()
-                      if (backOn) {
-                          line.style = Paint.Style.FILL_AND_STROKE
-                          line.strokeWidth = 1f
-                          line.alpha = 255
-                      } else {
-                          line.style = Paint.Style.STROKE
-                          line.strokeWidth = 1.4f
-                          line.alpha = dimA
-                      }
-                      c.drawPath(bl, line)
-                      c.drawPath(br, line)
-                      // side button of the back phone (same idea as the front phone's home button)
-                      line.style = Paint.Style.STROKE
-                      line.strokeWidth = 1.3f
-                      if (backOn) line.color = Color.BLACK
-                      c.drawLine(19.2f, 10.8f, 19.2f, 13.2f, line)
-                      line.color = Color.WHITE
                       val ph = Path()
                       ph.addRoundRect(7.5f, 5.2f, 16f, 19.2f, 1.8f, 1.8f, Path.Direction.CW)
-                      if (frontOn) {
-                          line.style = Paint.Style.FILL_AND_STROKE
-                          line.strokeWidth = 1f
-                          line.alpha = 255
-                      } else {
+                      // landscape phone
+                      fun drawLandPhone() {
+                          if (backOn) {
+                              line.style = Paint.Style.FILL_AND_STROKE
+                              line.strokeWidth = 1f
+                              line.alpha = 255
+                          } else {
+                              line.style = Paint.Style.STROKE
+                              line.strokeWidth = 1.4f
+                              line.alpha = dimA
+                          }
+                          c.drawPath(bl, line)
+                          c.drawPath(br, line)
                           line.style = Paint.Style.STROKE
-                          line.strokeWidth = 1.4f
-                          line.alpha = dimA
+                          line.strokeWidth = 1.3f
+                          if (backOn) line.color = Color.BLACK
+                          c.drawLine(19.2f, 10.8f, 19.2f, 13.2f, line)
+                          line.color = Color.WHITE
                       }
-                      c.drawPath(ph, line)
-                      line.style = Paint.Style.STROKE
-                      line.strokeWidth = 1.3f
-                      if (frontOn) line.color = Color.BLACK
-                      c.drawLine(10.7f, 17.3f, 12.8f, 17.3f, line)
-                      line.color = Color.WHITE
+                      // portrait phone
+                      fun drawPortPhone() {
+                          if (frontOn) {
+                              line.style = Paint.Style.FILL_AND_STROKE
+                              line.strokeWidth = 1f
+                              line.alpha = 255
+                          } else {
+                              line.style = Paint.Style.STROKE
+                              line.strokeWidth = 1.4f
+                              line.alpha = dimA
+                          }
+                          c.drawPath(ph, line)
+                          line.style = Paint.Style.STROKE
+                          line.strokeWidth = 1.3f
+                          if (frontOn) line.color = Color.BLACK
+                          c.drawLine(10.7f, 17.3f, 12.8f, 17.3f, line)
+                          line.color = Color.WHITE
+                      }
+                      // the active phone is always drawn on top (swaps places with the other one)
+                      if (landscape) {
+                          drawPortPhone()
+                          drawLandPhone()
+                      } else {
+                          drawLandPhone()
+                          drawPortPhone()
+                      }
                       // arrows
                       line.alpha = 255
                       line.strokeWidth = 1.7f
